@@ -1,0 +1,137 @@
+.titleViewport {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* Clip at the text's own left edge, after any branch icon/indentation. */
+  contain: paint;
+}
+
+.titleText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titleViewport[data-scrolling="true"] .titleText {
+  width: max-content;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .titleViewport[data-scrolling="true"] .titleText {
+    width: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transform: none !important;
+  }
+}
+
+.mutationError {
+  flex: 0 0 100%;
+  order: 2;
+  min-width: 0;
+  padding-bottom: 4px;
+  color: var(--status-failed);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.renameEditor {
+  flex: 1;
+  min-width: 0;
+  min-height: max(29px, calc(var(--text-sm) + 16px));
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 26%, var(--border));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-panel));
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 7%, transparent);
+  color: var(--text);
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.renameEditor:focus-within {
+  border-color: color-mix(in srgb, var(--text-muted) 52%, var(--border));
+  background: var(--bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-muted) 9%, transparent), 0 1px 2px color-mix(in srgb, #000 8%, transparent);
+}
+
+.renameEditorError,
+.renameEditorError:focus-within {
+  border-color: color-mix(in srgb, var(--status-failed) 55%, var(--border));
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 9px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+}
+
+.renameInput::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.renameAiButton {
+  width: 26px;
+  height: 24px;
+  margin-right: 3px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-muted) 82%, var(--text-dim));
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.renameAiButton:hover:not(:disabled),
+.renameAiButton:focus-visible {
+  outline: 0;
+  color: color-mix(in srgb, var(--accent) 72%, var(--text));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-hover));
+}
+
+.renameAiButton:active:not(:disabled) {
+  transform: scale(.94);
+}
+
+.renameAiIcon {
+  display: block;
+}
+
+.renameAiButtonLoading {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
+}
+
+.renameAiButtonError {
+  color: var(--status-failed);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

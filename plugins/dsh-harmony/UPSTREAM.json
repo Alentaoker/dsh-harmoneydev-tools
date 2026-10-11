@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/kexijiang/Piora",
+  "commit": "69c2f4e1c8b037bbec0dad812d8e8606f880c7f3",
+  "version": "0.5.5-beta.16",
+  "target": "DeepSeek Harness Desktop 0.2.0-rc.2",
+  "adaptationPatch": "patches/phone-automation.json",
+  "adaptations": [
+    "focused editable input and Search child readback",
+    "wake and password-free unlock with lock-state verification",
+    "semantic labels and clickable ancestor references",
+    "explicit scenario failures",
+    "shell startup input queue",
+    "native dsh local terminal integration"
+  ],
+  "mirrorResource": {
+    "tag": "v0.5.5-beta.15",
+    "commit": "50c1a40398ae6acde8b1284d5170c81cb19dfde6",
+    "runId": "37584784712",
+    "artifactId": 11465789639,
+    "artifactZipSha256": "ffb891aab8b8acab0b76a1b970ea23bdff7befd04b012e5606ac11b68d79b85c",
+    "hapSha256": "de3760e93312cc84cd38ec2e194524a673249f10e30b0e86f52a231c2e082cb9",
+    "componentVersion": "1.1.27",
+    "minimumApi": 26,
+    "sourceTreeSha256": "cb7aa6704c18bc2af1077a88562a952f225edf1c19b7a1541a5508e4c54bed0f",
+    "sourceMatchesCurrentPort": true
+  }
+}

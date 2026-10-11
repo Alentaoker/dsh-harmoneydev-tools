@@ -1,0 +1,195 @@
+.control {
+  min-width: 0;
+  max-width: min(230px, 31vw);
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.control:hover:not(:disabled),
+.control:focus-visible,
+.control[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  outline: 0;
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.control:disabled {
+  cursor: wait;
+  opacity: .58;
+}
+
+.visualLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  display: inline-flex;
+  transition: transform 140ms ease;
+  transform: rotate(90deg);
+}
+
+.caret[data-open="true"] {
+  transform: rotate(-90deg);
+}
+
+.popup {
+  position: fixed;
+  z-index: 10020;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius-surface);
+  background: var(--selection-background);
+  border-color: var(--selection-border);
+  -webkit-backdrop-filter: var(--selection-filter);
+  backdrop-filter: var(--selection-filter);
+  box-shadow: var(--selection-shadow);
+  color: var(--text);
+  animation: popupIn 120ms ease-out;
+}
+
+.popupHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 10px 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: transparent;
+}
+
+.popupHeader > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.popupHeader strong {
+  font-size: var(--text-sm);
+  font-weight: 680;
+}
+
+.popupHeader small {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+.popupHeader > button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.popupHeader > button:hover,
+.popupHeader > button:focus-visible {
+  outline: 0;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.optionList {
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+}
+
+.optionList > button {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.optionList > button:hover,
+.optionList > button:focus-visible {
+  outline: 0;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.optionList > button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+}
+
+.optionIcon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, currentColor 7%, var(--bg));
+}
+
+.optionCopy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.optionCopy strong,
+.optionCopy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionCopy strong {
+  color: inherit;
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
+.optionCopy small {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+@keyframes popupIn {
+  from { opacity: 0; transform: translateY(-3px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup { animation: none; }
+  .caret { transition: none; }
+}
+
+@media (max-width: 620px) {
+  .control { max-width: 40vw; }
+}

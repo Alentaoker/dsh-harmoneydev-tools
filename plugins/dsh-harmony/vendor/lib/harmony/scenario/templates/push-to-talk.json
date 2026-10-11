@@ -1,0 +1,24 @@
+{
+  "id": "push-to-talk",
+  "version": 1,
+  "title": "按住说话并核对手机识音",
+  "parameters": {
+    "audioAssetId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "profileId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "geometryId": "current-geometry"
+  },
+  "steps": [
+    {
+      "action": "voice_input",
+      "requiredMode": "push-to-talk",
+      "audioAssetId": "{{audioAssetId}}",
+      "profileId": "{{profileId}}",
+      "geometryId": "{{geometryId}}",
+      "timeoutMs": 30000
+    },
+    {
+      "action": "checkpoint",
+      "name": "phone-transcript-verified"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+name: Windows build and simulated tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-latest
+    env:
+      E2E_TELEMETRY_DISABLED: '1'
+      DSH_HOME: '${{ github.workspace }}/.test-data'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Profile registration tests
+        run: node --test scripts/*.test.mjs
+      - name: Harmony dependencies
+        run: npm --prefix plugins/dsh-harmony ci --legacy-peer-deps
+      - name: Harmony build and tests
+        run: |
+          npm --prefix plugins/dsh-harmony run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix plugins/dsh-harmony test
+      - name: E2E dependencies
+        run: npm --prefix plugins/dsh-e2e ci --legacy-peer-deps
+      - name: E2E build and tests
+        run: npm --prefix plugins/dsh-e2e test

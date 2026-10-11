@@ -1,0 +1,26 @@
+{
+  "id": "launch-and-verify",
+  "version": 1,
+  "title": "启动应用并验证",
+  "parameters": {
+    "bundleName": "dev.piora.audio.fixture",
+    "title": "Piora microphone fixture"
+  },
+  "steps": [
+    {
+      "action": "launch_app",
+      "bundleName": "{{bundleName}}",
+      "abilityName": "EntryAbility",
+      "waitFor": {
+        "selector": {
+          "id": "fixture-title",
+          "text": "{{title}}"
+        }
+      }
+    },
+    {
+      "action": "checkpoint",
+      "name": "launched"
+    }
+  ]
+}

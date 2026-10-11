@@ -1,0 +1,65 @@
+.pocket-markdown-editor { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--text); }
+.pocket-editor-host { flex: 1; min-height: 0; overflow: hidden; font-size: var(--writing-size, 16px); }
+.pocket-editor-host > .cm-editor { height: 100%; }
+.pocket-editor-menubar { display: flex; align-items: center; flex-wrap: wrap; min-height: 39px; padding: 4px 10px; gap: 2px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.pocket-editor-menubar button, .pocket-editor-menubar select, .pocket-editor-upload { min-height: 29px; border: 0; border-radius: 5px; padding: 5px 8px; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.pocket-editor-menubar button:hover, .pocket-editor-menubar select:hover, .pocket-editor-upload:hover { color: var(--text); background: var(--bg-hover); }
+.pocket-editor-menubar button[aria-pressed="true"] { color: var(--text); background: var(--bg-selected); }
+.pocket-editor-menubar select { max-width: 88px; }
+.pocket-editor-upload { display: inline-flex; align-items: center; }
+.pocket-editor-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.pocket-editor-spacer { flex: 1; }
+.pocket-editor-notice { display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 14px; background: var(--bg-panel); color: var(--text-muted); font-size: calc(var(--ui-font-size) * 12 / 14); border-bottom: 1px solid var(--border); }
+.pocket-editor-notice[role="alert"] { color: var(--status-failed, #bd6b64); }
+.pocket-editor-notice button { margin-left: auto; }
+.pocket-markdown-editor[data-mode="live"] .cm-gutters { display: none; }
+.pocket-markdown-editor[data-mode="source"] .cm-scroller { font-family: var(--font-mono, monospace); }
+.pocket-markdown-editor[data-mode="source"] .cm-content { max-width: none; }
+.pocket-markdown-editor[data-focus-line="true"] .cm-line { opacity: .34; transition: opacity 120ms ease; }
+.pocket-markdown-editor[data-focus-line="true"] .cm-activeLine { opacity: 1; }
+.pocket-markdown-editor .cm-md-heading { font-weight: 650; color: var(--text); }
+.pocket-markdown-editor .cm-md-heading-1 { font-size: 1.9em; line-height: 1.4; padding-top: .65em; }
+.pocket-markdown-editor .cm-md-heading-2 { font-size: 1.5em; line-height: 1.5; padding-top: .55em; border-bottom: 1px solid var(--border); }
+.pocket-markdown-editor .cm-md-heading-3 { font-size: 1.25em; padding-top: .45em; }
+.pocket-markdown-editor .cm-md-heading-4 { font-size: 1.1em; padding-top: .35em; }
+.pocket-markdown-editor .cm-md-heading-5, .pocket-markdown-editor .cm-md-heading-6 { font-size: 1em; padding-top: .25em; }
+.pocket-markdown-editor .cm-md-quote { border-left: 3px solid var(--accent); padding-left: 14px; color: var(--text-muted); }
+.pocket-markdown-editor .cm-md-code-line { background: var(--bg-panel); font-family: var(--font-mono, monospace); }
+.pocket-markdown-editor .cm-md-strong { font-weight: 700; }
+.pocket-markdown-editor .cm-md-em { font-style: italic; }
+.pocket-markdown-editor .cm-md-strike { text-decoration: line-through; color: var(--text-muted); }
+.pocket-markdown-editor .cm-md-highlight { background: color-mix(in srgb, #ffd84d 38%, transparent); border-radius: 2px; }
+.pocket-markdown-editor .cm-md-code { padding: 1px 4px; border-radius: 4px; background: var(--bg-panel); font-family: var(--font-mono, monospace); }
+.pocket-markdown-editor .cm-md-underline { text-decoration: underline; text-underline-offset: .16em; }
+.pocket-markdown-editor .cm-md-subscript { font-size: .8em; vertical-align: sub; }
+.pocket-markdown-editor .cm-md-superscript { font-size: .8em; vertical-align: super; }
+.pocket-markdown-editor .cm-md-link { color: var(--accent); text-decoration: underline; text-underline-offset: .16em; }
+.pocket-markdown-editor .cm-md-inline-math { display: inline-flex; max-width: 100%; overflow-x: auto; vertical-align: middle; }
+.pocket-markdown-editor .cm-md-task { vertical-align: middle; margin: 0 7px 0 1px; accent-color: var(--accent); }
+.pocket-markdown-editor .cm-md-image { display: grid; justify-items: center; gap: 7px; margin: 14px 0; padding: 8px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+.pocket-markdown-editor .cm-md-image:hover, .pocket-markdown-editor .cm-md-image:focus { border-color: var(--accent); outline: none; background: var(--bg-hover); }
+.pocket-markdown-editor .cm-md-image img { max-width: 100%; max-height: 56dvh; border-radius: 6px; }
+.pocket-markdown-editor .cm-md-image figcaption { color: var(--text-dim); font-size: .8em; }
+.pocket-markdown-editor .cm-md-rule { width: 100%; margin: 20px 0; border: 0; border-top: 1px solid var(--border); }
+.pocket-markdown-editor .cm-md-table-wrap { position: relative; overflow-x: auto; margin: 16px 0; padding-bottom: 20px; }
+.pocket-markdown-editor .cm-md-table { width: 100%; border-spacing: 0; border-collapse: collapse; font-size: .94em; }
+.pocket-markdown-editor .cm-md-table th, .pocket-markdown-editor .cm-md-table td { min-width: 90px; padding: 8px 11px; border: 1px solid var(--border); text-align: left; cursor: text; }
+.pocket-markdown-editor .cm-md-table th { background: var(--bg-panel); font-weight: 600; }
+.pocket-markdown-editor .cm-md-table td:focus, .pocket-markdown-editor .cm-md-table th:focus { position: relative; outline: 2px solid var(--accent); outline-offset: -2px; }
+.pocket-markdown-editor .cm-md-table-hint { position: absolute; right: 2px; bottom: 0; color: var(--text-dim); font-size: calc(var(--ui-font-size) * 11 / 14); }
+.pocket-markdown-editor .cm-md-math { overflow: auto; margin: 12px 0; padding: 10px; text-align: center; }
+.pocket-markdown-editor .cm-md-mermaid { display: grid; place-items: center; overflow: auto; min-height: 90px; margin: 14px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); color: var(--text-dim); }
+.pocket-markdown-editor .cm-md-mermaid svg { max-width: 100%; height: auto; }
+.pocket-markdown-editor .cm-md-render-error { color: var(--status-failed, #bd6b64); font-family: var(--font-mono, monospace); }
+.pocket-editor-context-menu { box-sizing: border-box; position: fixed; z-index: 10050; display: flex; flex-direction: column; padding: 5px; max-height: calc(100dvh - 16px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); box-shadow: var(--shadow-popover, 0 10px 30px #0004); }
+.pocket-editor-context-menu button { display: flex; width: 100%; min-height: 30px; align-items: center; justify-content: space-between; padding: 6px 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pocket-editor-context-menu button:hover, .pocket-editor-context-menu button:focus-visible { background: var(--bg-hover); outline: none; }
+.pocket-editor-context-menu kbd { color: var(--text-dim); font-family: var(--font-mono, monospace); font-size: calc(var(--ui-font-size) * 11 / 14); }
+.pocket-editor-menu-separator { height: 1px; margin: 4px 3px; background: var(--border); }
+.pocket-editor-dialog-backdrop { position: fixed; z-index: 10060; inset: 0; display: grid; place-items: center; padding: 20px; background: #0007; }
+.pocket-editor-dialog { display: flex; flex-direction: column; width: min(430px, 100%); gap: 12px; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel); box-shadow: var(--shadow-popover, 0 14px 40px #0005); }
+.pocket-editor-dialog h3 { margin: 0 0 4px; font-size: var(--text-lg); }
+.pocket-editor-dialog label { display: grid; gap: 5px; color: var(--text-muted); }
+.pocket-editor-dialog input { min-width: 0; padding: 8px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.pocket-editor-dialog > div { display: flex; justify-content: flex-end; gap: 6px; }
+@media (max-width: 700px) { .pocket-editor-menubar > button:nth-of-type(n+8), .pocket-editor-menubar > label { display: none; } .pocket-editor-host .cm-content { padding-inline: 16px; } }

@@ -1,0 +1,204 @@
+.header {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow: visible;
+}
+
+.slotButton,
+.iconButton,
+.stopButton,
+.renameForm input {
+  border-radius: var(--radius-control);
+  font: inherit;
+}
+
+.slotButton,
+.iconButton,
+.stopButton {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.slotButton:hover,
+.iconButton:hover,
+.stopButton:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.slotButton:focus-visible,
+.iconButton:focus-visible,
+.stopButton:focus-visible,
+.renameForm input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.statusSlot,
+.environmentSlot,
+.changesSlot,
+.actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.slotButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--control-height-compact);
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--task-status-color, transparent);
+}
+
+.statusText {
+  color: var(--task-status-color, var(--text-muted));
+  font-weight: 600;
+}
+
+.duration,
+.separator,
+.environmentDetail {
+  color: var(--text-dim);
+}
+
+.environmentSlot {
+  overflow: hidden;
+}
+
+.environmentSlot .slotButton {
+  max-width: 100%;
+}
+
+.environmentText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changesSlot .slotButton {
+  font-family: var(--font-mono);
+}
+
+.actions {
+  position: relative;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.stopButton {
+  min-height: var(--control-height-compact);
+  padding: 4px 8px;
+  color: var(--status-failed);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  display: grid;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--floating-background);
+  border-color: var(--floating-border);
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
+  box-shadow: var(--floating-shadow);
+}
+
+.menu button {
+  min-height: var(--control-height);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.renameForm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.renameForm input {
+  width: min(240px, 32vw);
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+@container (max-width: 640px) {
+  .changesSlot {
+    display: none;
+  }
+
+  .header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+
+@container (max-width: 520px) {
+  .environmentDetail,
+  .separator {
+    display: none;
+  }
+}
+
+@container (max-width: 400px) {
+  .duration,
+  .statusText,
+  .environmentText {
+    display: none;
+  }
+
+  .header {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+}

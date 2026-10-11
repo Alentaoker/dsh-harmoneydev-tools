@@ -1,0 +1,9 @@
+* text=auto eol=lf
+plugins/dsh-harmony/vendor/third_party/harmony-mirror/** -text
+plugins/dsh-harmony/third_party/harmony-mirror/** -text
+plugins/dsh-harmony/resources/harmony-mirror/** -text
+*.hap binary
+*.png binary
+*.jpg binary
+*.ico binary
+

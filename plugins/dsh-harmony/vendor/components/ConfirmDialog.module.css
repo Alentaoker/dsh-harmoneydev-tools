@@ -1,0 +1,105 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  /* Must stay above modal surfaces such as the settings dialog (z-index 3000)
+     so confirmation dialogs requested from inside a settings page appear over
+     that page instead of behind it. */
+  z-index: 3400;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--overlay-scrim);
+  backdrop-filter: blur(var(--overlay-blur));
+}
+
+.dialog {
+  width: min(430px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-panel);
+  outline: 0;
+  background: var(--dialog-background);
+  border-color: var(--floating-border);
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
+  color: var(--text);
+  box-shadow: var(--floating-shadow);
+}
+
+.body {
+  display: grid;
+  gap: 8px;
+  padding: 18px 18px 16px;
+}
+
+.body h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.body p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--floating-section);
+}
+
+.actions button {
+  min-height: var(--control-height);
+  padding: 5px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.actions button:hover,
+.actions button:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.actions button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.actions .primary {
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  font-weight: 620;
+}
+
+.actions .primary:hover,
+.actions .primary:focus-visible {
+  background: var(--btn-primary-bg-hover);
+  color: var(--btn-primary-fg);
+}
+
+.actions .danger {
+  border-color: color-mix(in srgb, var(--status-failed) 34%, var(--border-soft));
+  background: color-mix(in srgb, var(--status-failed) 12%, var(--surface-raised));
+  color: var(--status-failed);
+}
+
+.actions .danger:hover,
+.actions .danger:focus-visible {
+  background: color-mix(in srgb, var(--status-failed) 18%, var(--surface-raised));
+  color: var(--status-failed);
+}

@@ -1,0 +1,18 @@
+{
+  "id": "orientation",
+  "version": 1,
+  "title": "横竖屏原生几何验证",
+  "parameters": {
+    "rotation": 0
+  },
+  "steps": [
+    {
+      "action": "geometry_assert",
+      "rotation": "{{rotation}}"
+    },
+    {
+      "action": "checkpoint",
+      "name": "orientation-verified"
+    }
+  ]
+}

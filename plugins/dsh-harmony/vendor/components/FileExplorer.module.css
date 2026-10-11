@@ -1,0 +1,195 @@
+.filterBar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  backdrop-filter: blur(14px) saturate(1.05);
+}
+
+.filterShell {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg) 72%, var(--bg-panel));
+  color: var(--text-dim);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+/* Focus per PIORA_UI_STYLE_SPEC §6.2: keep 1px border, swap to accent + subtle ring */
+.filterShell:focus-within {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.filterInput {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+/* Outrank the global input:focus-visible outline; the shell provides the focus ring */
+.filterInput:focus-visible {
+  outline: none;
+}
+
+.filterInput::placeholder { color: var(--text-dim); }
+
+.clearButton {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.clearButton:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.searchResult {
+  display: flex;
+  min-height: max(30px, calc(var(--text-sm) + 14px));
+  align-items: center;
+  gap: 7px;
+  margin: 1px 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.searchResult:hover,
+.searchResult:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.searchResultText { min-width: 0; flex: 1; }
+
+.searchResultName,
+.searchResultPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchResultName { color: var(--text); font-size: var(--text-sm); }
+.searchResultPath { margin-top: 1px; color: var(--text-dim); font-size: var(--text-xs); }
+.searchStatus { padding: 10px 12px; color: var(--text-dim); font-size: var(--text-xs); }
+
+.contextMenu {
+  position: fixed;
+  z-index: 5000;
+  width: 238px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg-panel) 97%, transparent);
+  box-shadow: var(--shadow-popover);
+  color: var(--text);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.contextMenuItem {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: default;
+}
+
+.contextMenuItem:hover,
+.contextMenuItem:focus-visible,
+.contextMenuItem[data-open="true"] {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.contextMenuItem:disabled { opacity: 0.42; }
+.contextMenuIcon { display: grid; width: 18px; flex: 0 0 18px; place-items: center; color: var(--text-muted); }
+.contextMenuLabel { min-width: 0; flex: 1; }
+.contextMenuSeparator { height: 1px; margin: 5px -5px; background: var(--border-soft); }
+
+.contextSubmenu {
+  position: absolute;
+  top: -5px;
+  left: calc(100% + 5px);
+  width: 222px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg-panel) 97%, transparent);
+  box-shadow: var(--shadow-popover);
+}
+
+.contextSubmenuLeft { right: calc(100% + 5px); left: auto; }
+.explorer {
+  --file-status-modified: #b67a1a;
+  --file-status-added: #18834f;
+  --file-status-deleted: #cb4449;
+  --file-status-renamed: #376fbb;
+}
+
+:global(html.dark) .explorer {
+  --file-status-modified: #e1ad4c;
+  --file-status-added: #4ade80;
+  --file-status-deleted: #fb7777;
+  --file-status-renamed: #78adf7;
+}
+
+.treeItemRow {
+  content-visibility: auto;
+  contain-intrinsic-block-size: 24px;
+}
+
+.directoryChanges { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.directoryChangeBadge { display: inline-grid; min-width: 14px; height: 16px; place-items: center; font: 700 var(--text-xs) var(--font-mono); }
+
+.treeLoadMore {
+  display: block;
+  max-width: calc(100% - 24px);
+  min-height: 28px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.treeLoadMore:hover,
+.treeLoadMore:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}

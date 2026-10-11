@@ -1,0 +1,14 @@
+.backdrop { position: fixed; inset: 0; z-index: 1700; display: flex; justify-content: center; align-items: flex-start; padding-top: min(16vh, 140px); background: var(--search-overlay-scrim); }
+.dialog { width: min(640px, calc(100vw - 28px)); max-height: min(68vh, 620px); display: flex; flex-direction: column; border: 1px solid var(--floating-border); border-radius: var(--radius-panel); background: var(--dialog-background); -webkit-backdrop-filter: var(--floating-filter); backdrop-filter: var(--floating-filter); box-shadow: var(--floating-shadow); overflow: hidden; }
+.input { min-height: 48px; border: 0; border-bottom: 1px solid var(--border); outline: none; background: var(--floating-section); color: var(--text); padding: 0 16px; font-size: var(--text-md); }
+.argumentHint { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; padding: 5px 16px; border-bottom: 1px solid var(--border); background: var(--floating-section); color: var(--text-dim); font-size: var(--text-xs); }
+.argumentHint code { overflow: hidden; color: var(--text-muted); font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.list { overflow: auto; padding: 8px; }
+.group { padding: 6px 8px 4px; color: var(--text-dim); font-size: var(--text-xs); text-transform: uppercase; }
+.item { width: 100%; min-height: 42px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 7px 9px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.item:hover,.item[data-active="true"] { background: color-mix(in srgb, var(--bg-selected) 64%, transparent); }
+.item:disabled { cursor: default; opacity: .55; }
+.meta { display: flex; flex-direction: column; min-width: 0; }
+.reason { color: var(--text-dim); font-size: var(--text-xs); }
+.shortcut { color: var(--text-dim); font-family: var(--font-mono); font-size: var(--text-xs); }
+.empty { padding: 24px; text-align: center; color: var(--text-dim); }

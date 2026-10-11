@@ -1,0 +1,89 @@
+{
+  "name": "Piora Mobile App",
+  "version": "987654321",
+  "lastModified": "2026-08-31T10:20:30Z",
+  "editorType": "figma",
+  "thumbnailUrl": "https://s3-alpha.figma.com/mock-thumbnail.png",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "1:1",
+        "name": "App",
+        "type": "CANVAS",
+        "flowStartingPoints": [
+          { "nodeId": "10:1", "name": "Sign in flow" },
+          { "nodeId": "10:2", "name": "Main flow" }
+        ],
+        "children": [
+          {
+            "id": "10:1",
+            "name": "Sign in",
+            "type": "FRAME",
+            "children": [
+              { "id": "11:1", "name": "Welcome", "type": "TEXT" },
+              { "id": "11:2", "name": "Continue", "type": "INSTANCE" }
+            ]
+          },
+          {
+            "id": "10:2",
+            "name": "Home",
+            "type": "FRAME",
+            "children": [
+              { "id": "12:1", "name": "Top bar", "type": "COMPONENT" }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "2:1",
+        "name": "Design system",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "20:1",
+            "name": "Components",
+            "type": "SECTION",
+            "children": [
+              { "id": "21:1", "name": "Button", "type": "COMPONENT_SET" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "12:1": {
+      "key": "component-key-topbar",
+      "name": "Navigation/TopBar",
+      "description": "Application top navigation"
+    },
+    "21:2": {
+      "key": "component-key-button-primary",
+      "name": "Button/Primary",
+      "componentSetId": "21:1"
+    }
+  },
+  "componentSets": {
+    "21:1": {
+      "key": "component-set-key-button",
+      "name": "Button",
+      "description": "All button variants"
+    }
+  },
+  "styles": {
+    "S:1": {
+      "key": "style-key-body",
+      "name": "Typography/Body",
+      "styleType": "TEXT",
+      "description": "Default body typography"
+    },
+    "S:2": {
+      "key": "style-key-surface",
+      "name": "Color/Surface",
+      "styleType": "FILL"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+This repository contains components with different licenses.
+
+plugins/dsh-harmony: MIT. See plugins/dsh-harmony/LICENSE-Piora.
+plugins/dsh-e2e: Apache License 2.0. See plugins/dsh-e2e/LICENSE.
+Root documentation and helper scripts: MIT, under the terms reproduced in
+plugins/dsh-harmony/LICENSE-Piora; copyright 2026 dsh-harmony-e2e contributors.
+
+Third-party files retain their own notices and licenses. See
+THIRD_PARTY_NOTICES.md and each component's source/provenance documentation.
+

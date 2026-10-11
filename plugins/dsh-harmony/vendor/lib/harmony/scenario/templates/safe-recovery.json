@@ -1,0 +1,39 @@
+{
+  "id": "safe-recovery",
+  "version": 1,
+  "title": "断连后安全恢复",
+  "parameters": {
+    "target": "fixture-title"
+  },
+  "steps": [
+    {
+      "action": "assert",
+      "condition": {
+        "selector": {
+          "id": "{{target}}"
+        }
+      }
+    },
+    {
+      "action": "checkpoint",
+      "name": "before-read-only-tail"
+    },
+    {
+      "action": "wait_for",
+      "condition": {
+        "selector": {
+          "id": "{{target}}"
+        },
+        "timeoutMs": 5000
+      }
+    },
+    {
+      "action": "assert",
+      "condition": {
+        "selector": {
+          "id": "{{target}}"
+        }
+      }
+    }
+  ]
+}

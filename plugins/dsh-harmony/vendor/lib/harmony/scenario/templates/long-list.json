@@ -1,0 +1,30 @@
+{
+  "id": "long-list",
+  "version": 1,
+  "title": "有界长列表查找",
+  "parameters": {
+    "target": "item-70"
+  },
+  "steps": [
+    {
+      "action": "scroll_find",
+      "selector": {
+        "id": "{{target}}"
+      },
+      "container": {
+        "id": "long-list"
+      },
+      "direction": "down",
+      "maxSwipes": 30,
+      "tap": false
+    },
+    {
+      "action": "assert",
+      "condition": {
+        "selector": {
+          "id": "{{target}}"
+        }
+      }
+    }
+  ]
+}

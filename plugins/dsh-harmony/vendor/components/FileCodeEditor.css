@@ -1,0 +1,63 @@
+.piora-file-code-editor-wrap { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; container-type: inline-size; }
+.piora-file-code-editor {
+  width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden;
+  --file-code-comment: #718096; --file-code-keyword: #8b49ae; --file-code-string: #207b47;
+  --file-code-number: #2068ad; --file-code-type: #ad6a17; --file-code-function: #1d68aa;
+  --file-code-property: #8c442b; --file-code-tag: #a34a51; --file-code-link: #266bbb; --file-code-invalid: #cd3f4c;
+}
+html.dark .piora-file-code-editor {
+  --file-code-comment: #8592a4; --file-code-keyword: #c792ea; --file-code-string: #a5d992;
+  --file-code-number: #85b8ef; --file-code-type: #e9be79; --file-code-function: #82c9f2;
+  --file-code-property: #e8a478; --file-code-tag: #f28b93; --file-code-link: #8dbbfa; --file-code-invalid: #fa7777;
+}
+.piora-file-code-editor .cm-editor { height: 100%; background: color-mix(in srgb, var(--surface) 98%, var(--bg)); color: var(--text); font-family: var(--font-code-family); font-size: var(--text-base); }
+.piora-file-code-editor .cm-editor.cm-focused { outline: none; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 72%, transparent); }
+.piora-file-code-editor .cm-scroller { overflow: auto; font-family: inherit; line-height: var(--editor-code-line-height); }
+.piora-file-code-editor .cm-content { min-height: 100%; padding: 8px 0 24px; caret-color: var(--accent); }
+.piora-file-code-editor .cm-line { padding: 0 16px 0 12px; }
+.piora-file-code-editor .cm-gutters { border-right: 1px solid var(--border-soft); background: color-mix(in srgb, var(--surface-muted) 78%, var(--surface)); color: var(--text-dim); font-family: var(--font-code-family); font-size: var(--text-xs); }
+.piora-file-code-editor .cm-activeLine { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.piora-file-code-editor .cm-activeLineGutter { background: color-mix(in srgb, var(--accent) 9%, var(--surface-muted)); color: var(--text-muted); }
+.piora-file-code-editor .cm-selectionBackground, .piora-file-code-editor.cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.piora-file-code-editor .cm-searchMatch { background: color-mix(in srgb, var(--status-attention) 25%, transparent); }
+.piora-file-code-editor .cm-searchMatch-selected { background: color-mix(in srgb, var(--status-attention) 48%, transparent); }
+.piora-file-code-editor .cm-foldGutter { width: 20px; min-width: 20px; cursor: pointer; }
+.piora-file-code-editor .cm-foldGutter .cm-gutterElement { display: flex; align-items: center; justify-content: center; width: 20px; padding: 0; line-height: 1; }
+.piora-file-code-editor .cm-file-fold-chevron { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; border-radius: 4px; color: var(--text-dim); opacity: .72; }
+.piora-file-code-editor .cm-file-fold-chevron::before { display: block; width: 5px; height: 5px; border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor; content: ""; transform: rotate(-45deg); }
+.piora-file-code-editor .cm-file-fold-chevron[data-open="true"]::before { transform: translateY(-2px) rotate(45deg); }
+.piora-file-code-editor .cm-foldGutter .cm-gutterElement:hover .cm-file-fold-chevron { background: var(--bg-hover); color: var(--text); opacity: 1; }
+.piora-file-code-editor .cm-file-change-gutter { width: 5px; min-width: 5px; padding: 0; background: var(--surface); border: 0; }
+.piora-file-code-editor .cm-file-change-gutter .cm-gutterElement { width: 5px; padding: 0; }
+.piora-file-code-editor .cm-file-change-marker { display: block; width: 3px; height: calc(var(--editor-code-line-height) - 2px); min-height: 12px; margin-left: 1px; border-radius: 2px; background: var(--status-attention); }
+.piora-file-code-editor .cm-file-change-marker[data-kind="added"] { background: var(--status-ready); }
+.piora-file-code-editor .cm-file-change-marker[data-kind="deleted"] { height: 3px; min-height: 3px; margin-top: 1px; background: var(--status-failed); }
+.piora-file-code-editor .cm-panels-top { position: absolute; z-index: 20; top: 10px; right: 12px; left: auto; width: min(580px, calc(100% - 24px)); border: 0; background: transparent; pointer-events: none; }
+.piora-file-code-editor .cm-panels-top .cm-panel { pointer-events: auto; }
+.piora-file-code-editor .piora-search--floating { display: block; padding: 6px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg-panel); box-shadow: 0 10px 30px rgb(0 0 0 / 18%); }
+.piora-file-code-editor .piora-search--floating .piora-search-row { flex-wrap: nowrap; gap: 3px; }
+.piora-file-code-editor .piora-search--floating .piora-search-icon { flex: 0 0 22px; text-align: center; font-size: calc(var(--ui-font-size) * 1.5); line-height: 1; color: var(--text-muted); }
+.piora-file-code-editor .piora-search--floating input[name="search"] { flex: 1 1 auto; min-width: 50px; height: 30px; padding-inline: 7px; border: 0; background: transparent; box-shadow: none; }
+.piora-file-code-editor .piora-search--floating input[name="search"]:focus { outline: 0; }
+.piora-file-code-editor .piora-search--floating .piora-search-count { flex: 0 0 auto; min-width: 46px; text-align: center; white-space: nowrap; }
+.piora-file-code-editor .piora-search--floating .piora-search-options { gap: 0; padding: 0 3px; border-right: 0; border-left: 1px solid var(--border); }
+.piora-file-code-editor .piora-search--floating button { width: 28px; min-width: 28px; height: 28px; padding: 3px; }
+.piora-file-code-editor .piora-search--floating .piora-replace-row { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.piora-file-code-editor .piora-search--floating .piora-replace-row[hidden] { display: none; }
+.piora-file-code-editor .piora-search--floating .piora-replace-row input { height: 29px; min-width: 50px; }
+.piora-file-code-editor .piora-search--floating .piora-replace-row button { width: auto; padding-inline: 8px; }
+.piora-file-code-editor .piora-search--floating .piora-search-replace-toggle[aria-expanded="true"] { color: var(--accent); background: var(--bg-hover); }
+.piora-definition-picker { position: absolute; z-index: 30; top: 48px; right: 12px; width: min(420px, calc(100% - 24px)); max-height: 260px; overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-panel); box-shadow: 0 12px 30px rgb(0 0 0 / 18%); }
+.piora-definition-picker > div { padding: 5px 8px; color: var(--text-muted); font-size: var(--text-xs); }
+.piora-definition-picker button { display: block; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.piora-definition-picker button:hover, .piora-definition-picker button:focus-visible { background: var(--bg-hover); }
+.piora-definition-picker small { display: block; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.piora-file-code-editor .cm-tooltip-autocomplete { max-width: min(520px, calc(100vw - 24px)); border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); color: var(--text); box-shadow: 0 9px 24px rgb(0 0 0 / 18%); }
+.piora-file-code-editor .cm-completionDetail { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.piora-file-code-editor .cm-tooltip-hover { max-width: min(560px, 85vw); padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-panel); color: var(--text); box-shadow: 0 8px 20px rgb(0 0 0 / 14%); white-space: pre-wrap; }
+@container (max-width: 500px) { .piora-file-code-editor .piora-search--floating .piora-search-icon { display: none; } }
+@container (max-width: 380px) {
+  .piora-file-code-editor .piora-search--floating .piora-search-row { flex-wrap: wrap; }
+  .piora-file-code-editor .piora-search--floating input[name="search"] { flex-basis: calc(100% - 170px); }
+  .piora-file-code-editor .piora-search--floating .piora-search-options { order: 10; margin-left: auto; }
+}

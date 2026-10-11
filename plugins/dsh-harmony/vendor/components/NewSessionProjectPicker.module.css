@@ -1,0 +1,237 @@
+.projectControl {
+  position: relative;
+  min-width: 0;
+}
+
+.projectTrigger {
+  max-width: min(220px, 31vw);
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color .14s ease, color .14s ease, background .14s ease;
+}
+
+.projectTrigger:hover,
+.projectTrigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.projectTrigger[data-required="true"] {
+  border-color: #ef4444;
+  color: #dc2626;
+}
+
+.projectTrigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectPopover {
+  position: absolute;
+  z-index: 90;
+  left: 0;
+  bottom: calc(100% + 9px);
+  width: min(390px, calc(100vw - 30px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--selection-background);
+  border-color: var(--selection-border);
+  -webkit-backdrop-filter: var(--selection-filter);
+  backdrop-filter: var(--selection-filter);
+  box-shadow: var(--selection-shadow);
+}
+
+.projectBackdrop {
+  display: none;
+}
+
+.projectSearch {
+  height: 43px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.projectSearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.projectList {
+  max-height: 270px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.projectList button {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.projectList button:hover,
+.projectList button[aria-selected="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.projectList button > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.projectList strong,
+.projectList small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectList strong {
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.projectList small {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-xs) * .87);
+}
+
+.projectList em {
+  min-width: 21px;
+  height: 21px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-selected);
+  color: var(--text-dim);
+  font-size: calc(var(--text-xs) * .87);
+  font-style: normal;
+}
+
+.projectList p {
+  margin: 0;
+  padding: 22px 12px;
+  color: var(--text-dim);
+  text-align: center;
+  font-size: var(--text-sm);
+}
+
+.browseProject {
+  width: 100%;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.browseProject:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 0 2px;
+  color: #dc2626;
+  font-size: var(--text-xs);
+}
+
+.statusRow button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 620px) {
+  .projectTrigger { max-width: 42vw; }
+
+  .projectBackdrop {
+    position: fixed;
+    z-index: 89;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, .24);
+  }
+
+  .projectPopover {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: calc(100dvh - 20px);
+    padding-top: 14px;
+    border-radius: var(--radius-panel);
+  }
+
+  .projectPopover::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 34px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+    transform: translateX(-50%);
+  }
+
+  .projectList { max-height: min(38dvh, 270px); }
+}

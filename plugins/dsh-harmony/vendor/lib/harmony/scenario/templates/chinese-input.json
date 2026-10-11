@@ -1,0 +1,27 @@
+{
+  "id": "chinese-input",
+  "version": 1,
+  "title": "中文输入与精确核对",
+  "parameters": {
+    "text": "你好，鸿蒙 👋\n第二行 $ ` \""
+  },
+  "steps": [
+    {
+      "action": "input_text",
+      "selector": {
+        "id": "text-input"
+      },
+      "text": "{{text}}"
+    },
+    {
+      "action": "assert",
+      "condition": {
+        "selector": {
+          "id": "text-result",
+          "text": "{{text}}",
+          "match": "exact"
+        }
+      }
+    }
+  ]
+}

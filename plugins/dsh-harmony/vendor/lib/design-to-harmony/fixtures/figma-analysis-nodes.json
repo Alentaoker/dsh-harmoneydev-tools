@@ -1,0 +1,68 @@
+{
+  "10:1": {
+    "document": {
+      "id": "10:1",
+      "name": "Sign in",
+      "type": "FRAME",
+      "layoutMode": "VERTICAL",
+      "primaryAxisSizingMode": "FIXED",
+      "counterAxisSizingMode": "FIXED",
+      "itemSpacing": 16,
+      "paddingTop": 24,
+      "paddingRight": 20,
+      "paddingBottom": 24,
+      "paddingLeft": 20,
+      "absoluteBoundingBox": { "x": 0, "y": 0, "width": 360, "height": 800 },
+      "effects": [{ "type": "LAYER_BLUR", "visible": true }],
+      "reactions": [{ "action": { "type": "NODE", "destinationId": "10:2" } }],
+      "children": [
+        {
+          "id": "11:1",
+          "name": "Welcome",
+          "type": "TEXT",
+          "characters": "Welcome back",
+          "style": { "fontFamily": "HarmonyOS Sans", "fontWeight": 600, "fontSize": 26, "lineHeightPx": 34, "textAlignHorizontal": "LEFT" },
+          "fills": [{ "type": "SOLID", "color": { "r": 0.1, "g": 0.12, "b": 0.16, "a": 1 }, "boundVariables": { "color": { "type": "VARIABLE_ALIAS", "id": "variable1" } } }]
+        },
+        {
+          "id": "11:2",
+          "name": "Button",
+          "type": "INSTANCE",
+          "componentId": "21:1",
+          "boundVariables": { "gap": { "type": "VARIABLE_ALIAS", "id": "variable-missing" } },
+          "blendMode": "MULTIPLY"
+        },
+        {
+          "id": "11:3",
+          "name": "Hero",
+          "type": "RECTANGLE",
+          "layoutPositioning": "ABSOLUTE",
+          "fills": [{ "type": "IMAGE", "imageRef": "image-hero", "opacity": 0.9 }]
+        },
+        {
+          "id": "11:4",
+          "name": "Live widget",
+          "type": "WIDGET"
+        }
+      ]
+    }
+  },
+  "10:2": {
+    "document": {
+      "id": "10:2",
+      "name": "Home",
+      "type": "FRAME",
+      "layoutMode": "VERTICAL",
+      "children": [{ "id": "12:1", "name": "Top bar", "type": "COMPONENT" }]
+    }
+  },
+  "21:1": {
+    "document": {
+      "id": "21:1",
+      "name": "Button",
+      "type": "COMPONENT_SET",
+      "layoutMode": "HORIZONTAL",
+      "children": [{ "id": "21:2", "name": "Primary", "type": "COMPONENT" }]
+    }
+  }
+}
