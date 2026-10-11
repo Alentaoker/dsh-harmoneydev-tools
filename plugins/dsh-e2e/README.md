@@ -1,4 +1,4 @@
-# dshE2E 0.1.1
+# dshE2E 0.1.2
 
 基于真实 `e2e@0.19.0` runner 的 DeepSeek Harness 插件。共用 dshHarmony 0.2.8 的设备管理器、物理控制锁和基础操作。
 

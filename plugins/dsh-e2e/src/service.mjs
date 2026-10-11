@@ -50,7 +50,7 @@ export function createService(ctx) {
     if (operation === 'observe') {
       job.progress = { ...job.progress, stage: 'observing' };
       const raw = await m.snapshot({ ...common, includeTree: true, includeScreenshot: !!input.pixels });
-      await job.logCollector?.refresh();
+      void job.logCollector?.refresh();
       const geometry = m.getDisplayGeometry ? await m.getDisplayGeometry(job.device.serial,signal) : await m.getFrameGeometry(job.device.serial, 'screenshot', signal);
       job.viewport = { width: geometry.nativeWidth, height: geometry.nativeHeight };
       return { nodes: raw.nodes, quality: raw.quality, targetApp: job.args.appBundle, generation: raw.generation, revision: raw.revision, viewport: job.viewport, ...(input.pixels && raw.screenshot ? { pixels: { data: raw.screenshot.data.toString('base64') } } : {}) };
@@ -188,7 +188,7 @@ export function createService(ctx) {
       const apps = await m.applications(device.serial, query, undefined, signal);
       return { query, total: apps.length, offset, candidates: apps.slice(offset, offset + limit).map(({ bundleName, label, process }) => ({ bundleName, label, process })), nextOffset: offset + limit < apps.length ? offset + limit : null, resolved: apps.length === 1 ? apps[0].bundleName : null, instruction: '候选来自设备，不要猜包名；名称无法查询时留空 query 分页查看已安装应用。日志目标传 logAppBundle，不会重启应用。' };
     },
-    status: async () => ({ plugin: 'dshE2E', version: '0.1.1', e2eVersion: '0.19.0', storage: dataRoot, harmonyReady: !!ctx.dshHarmony.automation, devices: (await manager().listDevices()).map(({ serial, name, model, state }) => ({ serial, name, model, state })), active: [...jobs.values()].filter(j => ['queued', 'running'].includes(j.status)).map(summary) }),
+    status: async () => ({ plugin: 'dshE2E', version: '0.1.2', e2eVersion: '0.19.0', storage: dataRoot, harmonyReady: !!ctx.dshHarmony.automation, devices: (await manager().listDevices()).map(({ serial, name, model, state }) => ({ serial, name, model, state })), active: [...jobs.values()].filter(j => ['queued', 'running'].includes(j.status)).map(summary) }),
     async cancel(id) { const job = await get(id); if (!job.controller) throw new Error('此任务已结束'); job.controller.abort(new Error('用户取消')); await job.promise; return summary(job); },
     async replay(id, sessionId, model, signal) { const job = await get(id); return run(job.args, sessionId, model, signal); },
     async dispose() { for (const job of jobs.values()) if (['queued', 'running'].includes(job.status)) job.controller.abort(new Error('DSH 正在关闭')); await Promise.allSettled([...jobs.values()].map(j => j.promise)); if (server) await new Promise(r => server.close(r)); },

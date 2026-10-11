@@ -1,6 +1,6 @@
 {
   "name": "dsh-e2e",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "dshE2E — 基于 e2e 的鸿蒙任务执行、结果验证、流程复用和本地测试报告",

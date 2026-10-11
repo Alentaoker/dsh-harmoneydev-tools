@@ -15,10 +15,10 @@ export function harnessExecutor() {
   return { name: 'dsh-bounded-phone', version: '0.1.0', cache: 'inherit',
     async runStep(ctx) {
       const assertOnly = ctx.step.kind === 'assert';
-      const history = []; let lastDecision = '', repeats = 0, unchanged = 0, previousScreen = '', staleObservations = 0;
+      const history = []; let lastDecision = '', repeats = 0, unchanged = 0, previousScreen = '', staleObservations = 0, modelCalls = 0;
       while (ctx.budgets.actionsUsed() <= ctx.budgets.maxActions) {
         ctx.signal.throwIfAborted();
-        if (ctx.budgets.maxModelCalls <= history.length) return { status: 'blocked', errorCode: 'AUTOMATION_UNSUPPORTED', summary: '已用完本步骤模型调用次数，停止探索' };
+        if (ctx.budgets.maxModelCalls <= modelCalls) return { status: 'blocked', errorCode: 'STEP_BUDGET_EXHAUSTED', summary: '已用完本步骤模型调用次数，停止探索' };
         const screen = await ctx.observe({ tree: true });
         if (screen.treeUnavailable) return { status: 'blocked', errorCode: 'AUTOMATION_UNSUPPORTED', summary: '当前控件树不可用，停止操作' };
         unchanged = screen.text === previousScreen ? unchanged + 1 : 0; previousScreen = screen.text;
@@ -31,6 +31,7 @@ export function harnessExecutor() {
         try { response = await rpc('model', { system, input }, ctx.signal); }
         catch (error) { return { status: 'blocked', errorCode: 'MODEL_UNAVAILABLE', summary: error.message }; }
         ctx.budgets.recordModelCall({ ...response.usage, provider: response.provider, modelId: response.model, startedAt: new Date(started).toISOString(), durationMs: Date.now() - started });
+        modelCalls++;
         let decision;
         try { decision = parseDecision(response.text); } catch (error) { return { status: 'failed', errorCode: 'MODEL_OUTPUT_INVALID', summary: `模型动作无法解析：${error.message}；输出：${redactLog(response.text).slice(0, 256) || '(空)'}` }; }
         history.push(decision);

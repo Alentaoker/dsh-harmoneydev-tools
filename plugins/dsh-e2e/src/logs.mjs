@@ -50,15 +50,21 @@ export async function startLogCollection(manager, job) {
   function warning(message) { const value = safe(message); if (!info.warnings.includes(value)) info.warnings.push(value); }
   async function refresh() {
     if (refreshPromise || finishing || signal.aborted) return refreshPromise;
+    const refreshSignal = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(15000)]);
     refreshPromise = (async () => {
       try {
-        const processes = await manager.listProcesses(job.device.serial, AbortSignal.any([signal, controller.signal, AbortSignal.timeout(5000)]));
+        const processes = await manager.listProcesses(job.device.serial, refreshSignal);
         if (finishing) return;
         current.clear(); for (const process of processes) current.set(process.pid, process.name);
         info.pids = processes.filter(p => processMatches(p.name, job.logTarget)).map(p => p.pid);
         for (const pid of info.pids) observed.add(pid);
         info.observedPids = [...observed];
-      } catch (error) { if (!signal.aborted && !controller.signal.aborted) warning(`目标进程刷新失败：${error.message}`); }
+      } catch (error) {
+        if (!signal.aborted && !controller.signal.aborted) {
+          if (refreshSignal.aborted && refreshSignal.reason?.name === 'TimeoutError') info.refreshDeferred = (info.refreshDeferred || 0) + 1;
+          else warning(`目标进程刷新失败：${error.message}`);
+        }
+      }
       finally { refreshPromise = undefined; }
     })();
     return refreshPromise;
