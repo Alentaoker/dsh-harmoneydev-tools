@@ -61,12 +61,13 @@ export class HosVideoPacketizer {
     const key = units.some(unit => (unit[0] & 0x1f) === 5);
     const picture = key || units.some(unit => (unit[0] & 0x1f) === 1);
     if (this.configured && picture) {
-      const payload = Buffer.allocUnsafe(9 + bytes.length);
-      payload.writeUInt8(key ? 1 : 0, 0);
+      const frame = Buffer.allocUnsafe(17 + bytes.length);
+      frame.writeUInt32BE(3, 0); frame.writeUInt32BE(9 + bytes.length, 4);
+      frame.writeUInt8(key ? 1 : 0, 8);
       const now = BigInt(Date.now()) * BigInt(1000);
       this.timestamp = now > this.timestamp ? now : this.timestamp + BigInt(1);
-      payload.writeBigUInt64BE(this.timestamp, 1); bytes.copy(payload, 9);
-      output.push(packet(3, payload));
+      frame.writeBigUInt64BE(this.timestamp, 9); bytes.copy(frame, 17);
+      output.push(frame);
     }
     return output;
   }

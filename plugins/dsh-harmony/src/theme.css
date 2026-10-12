@@ -3,6 +3,8 @@
   --text-base:14px; --bg:#242426; --bg-panel:#202023; --bg-hover:#343437;
   --text:#ededee; --text-muted:#b5b5bc; --text-dim:#919198; --border:#45454a;
   --accent:#75a9ec; --accent-muted:#293e56; --danger:#ef8080;
+  --surface-raised:#2c2c30; --border-soft:#45454a; --radius-surface:8px;
+  --shadow-popover:0 8px 24px #0006;
   color:var(--text); font-size:14px;
 }
 .dshHarmony *, .dshHarmony *::before, .dshHarmony *::after { box-sizing:border-box; }

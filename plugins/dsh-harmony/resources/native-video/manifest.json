@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "fileName": "libdsh-native-video.z.so",
+  "architecture": "aarch64",
+  "resourceName": "libscrcpy/libscrcpy_server_unix_6.6-20260418.z.so",
+  "byteLength": 268471,
+  "sha256": "98bbc964fef1c4d17b446ec717102b855d09224b23fc1872bf70e1f928d010dd",
+  "sourceSdk": "lib/hosScrcpy-1.0.17.15-java21-SNAPSHOT-shaded.jar",
+  "sourceSdkSha256": "1ea193389f3ec6cf05705852e85b6d2ee67111209bfd868909816ea7e4142e0c",
+  "sourceArchiveSha256": "541797bd57b3168ff57473fa5208d2381de9aa3b4a1e0cd240be9b32fdae1457",
+  "distribution": "private personal installation; original vendor rights retained"
+}

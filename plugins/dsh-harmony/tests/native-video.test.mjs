@@ -6,16 +6,15 @@ import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {EventEmitter} from 'node:events';
-import JSZip from 'jszip';
 const output=await build({entryPoints:['vendor/lib/harmony/deveco-native-video.ts'],bundle:true,format:'esm',platform:'node',packages:'external',outfile:'tests/.native-video-test.mjs'});
 const {openNativeDevEcoVideo,ownedNativeVideoPid}=await import('./.native-video-test.mjs');
 await rm('tests/.native-video-test.mjs');
 async function fixture(t){
  const dir=await mkdtemp(join(tmpdir(),'dsh-native-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- const inner=new JSZip();inner.file('libscrcpy/libscrcpy_server_unix_6.6-20260418.z.so',Buffer.from([127,69,76,70,2,1,1,0]));
- const outer=new JSZip();outer.file('lib/hosScrcpy-fixture.jar',await inner.generateAsync({type:'nodebuffer'}));
- const jar=join(dir,'test.jar');await writeFile(jar,await outer.generateAsync({type:'nodebuffer'}));
- return {jarPath:jar,cacheDirectory:dir,ownershipDirectory:join(dir,'owners')};
+ const bytes=Buffer.alloc(64);bytes.set([127,69,76,70,2,1,1,0]);bytes.writeUInt16LE(183,18);
+ await writeFile(join(dir,'libdsh-native-video.z.so'),bytes);
+ await writeFile(join(dir,'manifest.json'),JSON.stringify({schemaVersion:1,fileName:'libdsh-native-video.z.so',architecture:'aarch64',resourceName:'fixture.so',byteLength:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}));
+ return {resourceDirectory:dir,cacheDirectory:dir,ownershipDirectory:join(dir,'owners')};
 }
 function fakeTransport(){
  const call=new EventEmitter();Object.assign(call,{cancel(){this.cancelled=true;},pause(){this.paused=true;},resume(){this.paused=false;}});
@@ -53,6 +52,9 @@ test('the stream becomes ready only with an IDR and pauses at its byte budget',a
  const f=await fixture(t),x=fakeTransport(),cmd=ownedCommands();
  x.call.once('started',()=>{data(x.call,key);for(let i=0;i<9;i++)data(x.call,annex(Buffer.concat([Buffer.from([0x41]),Buffer.alloc(65536)])));});
  const connection=await openNativeDevEcoVideo({...f,...cmd,transport:x.transport,serial:'test-stream'});
+ const start=cmd.commands.find(a=>a[1]?.startsWith('uitest'))[1];
+ assert.match(start,/-scale 2 -frameRate 24 -bitRate 3145728/);
+ assert.doesNotMatch(start,/-scale2|-frameRate24/);
  assert.equal(x.call.paused,true);
  const reader=connection.stream.getReader();const config=await reader.read(),frame=await reader.read();
  assert.equal(Buffer.from(config.value).readUInt32BE(),2);assert.equal(Buffer.from(frame.value).readUInt32BE(),3);

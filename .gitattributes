@@ -1,4 +1,5 @@
 * text=auto eol=lf
+*.so binary
 plugins/dsh-harmony/vendor/third_party/harmony-mirror/** -text
 plugins/dsh-harmony/third_party/harmony-mirror/** -text
 plugins/dsh-harmony/resources/harmony-mirror/** -text

@@ -1,9 +1,9 @@
 import { createRequire } from 'node:module';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, writeFile, rm, rename } from 'node:fs/promises';
-import { isAbsolute, join, resolve, dirname } from 'node:path';
+import { mkdir, readFile, writeFile, rm, rename } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { createServer } from 'node:net';
-import JSZip from 'jszip';
+import { embeddedNativeVideoResource, nativeVideoProfile, type NativeVideoQuality } from './native-video-resource';
 import { HarmonyError } from './errors';
 import { HosVideoPacketizer } from './media/hos-packets';
 import type { HarmonyVideoConnection } from './types';
@@ -22,7 +22,7 @@ export function ownedNativeVideoPid(output:string,extension:string) { return own
 export type NativeVideoCommand=(args: string[], operation: string, signal?: AbortSignal)=>Promise<string>;
 export interface NativeVideoOptions {
  serial: string; cacheDirectory: string; signal?: AbortSignal; command: NativeVideoCommand;
- jarPath?: string; resourceName?: string;
+ resourceDirectory?: string; quality?: NativeVideoQuality;
  /** Internal transport seam for lifecycle verification without a phone. */
  transport?: (port:number)=>{client:any;request:any};
  ownershipDirectory?: string;
@@ -35,45 +35,20 @@ export interface NativeVideoOptions {
 async function loopbackPort(): Promise<number> {
  return new Promise((accept,reject)=>{ const server=createServer();server.once('error',reject);server.listen(0,'127.0.0.1',()=>{const p=(server.address() as {port:number}).port;server.close(e=>e?reject(e):accept(p));}); });
 }
-/** Reads only the user's installed resource; proprietary binaries are not shipped in the plugin. */
-export async function localDevEcoVideoResource(options: Pick<NativeVideoOptions,'cacheDirectory'|'jarPath'|'resourceName'>) {
- const root=process.env.DSH_DEVECO_TESTING_HOME || 'E:\\devecotest';
- const jar=options.jarPath || join(root,'Prograndata','common','resources','screenCastingResource','screenCastingResource.jar');
- if(!isAbsolute(jar)) throw new HarmonyError('INVALID_ARGUMENT','DevEco Testing resource path must be absolute');
- const info=await lstat(jar).catch(()=>undefined);
- if(!info?.isFile() || info.isSymbolicLink() || info.size>128*1024*1024) throw new HarmonyError('CAPABILITY_UNAVAILABLE','Local DevEco Testing video resource is unavailable');
- const outer=await JSZip.loadAsync(await readFile(jar));
- const sdkName=Object.keys(outer.files).find(n=>/^lib\/hosScrcpy-[^/]+\.jar$/.test(n));
- if(!sdkName) throw new HarmonyError('CAPABILITY_UNAVAILABLE','Installed DevEco video SDK is missing');
- const sdkEntry=outer.file(sdkName)!;
- if((sdkEntry as any)._data?.uncompressedSize>128*1024*1024) throw new HarmonyError('INVALID_RESPONSE','DevEco video SDK is too large');
- const sdk=await JSZip.loadAsync(await sdkEntry.async('nodebuffer'));
- const name=options.resourceName || 'libscrcpy/libscrcpy_server_unix_6.6-20260418.z.so';
- const entry=sdk.file(name);
- if(!entry || (entry as any)._data?.uncompressedSize>32*1024*1024) throw new HarmonyError('CAPABILITY_UNAVAILABLE','Compatible DevEco native video extension is missing');
- const bytes=await entry.async('nodebuffer');
- if(bytes.length>32*1024*1024 || !bytes.subarray(0,4).equals(Buffer.from([127,69,76,70]))) throw new HarmonyError('INVALID_RESPONSE','Invalid native video extension');
- const hash=createHash('sha256').update(bytes).digest('hex');
- await mkdir(options.cacheDirectory,{recursive:true});
- const file=resolve(options.cacheDirectory,`deveco-video-${hash}.so`);
- const cached=await readFile(file).catch(()=>undefined);
- if(!cached || createHash('sha256').update(cached).digest('hex')!==hash) await writeFile(file,bytes);
- return {file,hash,resourceName:name};
-}
-
 /** Owns its exact daemon, files and forward. Never kills another uitest or launches the Java GUI. */
 export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promise<HarmonyVideoConnection> {
  const {serial,signal,command}=options;
  if(!/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(serial)) throw new HarmonyError('INVALID_ARGUMENT','Invalid device serial');
  if(active.has(serial)) throw new HarmonyError('DEVICE_BUSY',`当前服务已有投屏连接（本机进程 ${process.pid}）。请关闭其他设备投屏标签后重试。`,{details:{ownerPid:process.pid}});
  active.add(serial);
- let pid:string|undefined,started=false,forward=false,call:any,client:any,request:any,closed=false,closing:Promise<void>|undefined;
+ let pid:string|undefined,started=false,filesTouched=false,forward=false,call:any,client:any,request:any,closed=false,closing:Promise<void>|undefined;
  let controller:ReadableStreamDefaultController<Uint8Array>|undefined;
  let firstTimer:ReturnType<typeof setTimeout>|undefined,watchdog:ReturnType<typeof setTimeout>|undefined,wakeupTimer:ReturnType<typeof setTimeout>|undefined,initialFrameTimer:ReturnType<typeof setTimeout>|undefined;
  let statsTimer:ReturnType<typeof setInterval>|undefined;
  const stats:{[key:string]:unknown}={hostPid:process.pid,startedAt:new Date().toISOString(),encodedPictures:0,videoBytes:0,state:'starting'};
  const statsPath=join(options.cacheDirectory,'native-video-status.json');
- const saveStats=()=>writeFile(statsPath,JSON.stringify(stats,null,2)).catch(()=>{});
+ let statsWrites=Promise.resolve();
+ const saveStats=()=>{const body=JSON.stringify(stats,null,2);return statsWrites=statsWrites.then(()=>writeFile(statsPath,body)).catch(()=>{});};
  const id=randomUUID().replaceAll('-',''), extension=`libdsh_video_${id}.so`,remote=`/data/local/tmp/${extension}`,log=`/data/local/tmp/dsh-video-${id}.log`;
  let localPort=0;
  let ownerLock:ReturnType<typeof acquireDeviceLock>|undefined, runtimeLock:ReturnType<typeof acquireDeviceLock>|undefined;
@@ -106,7 +81,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
     if(ownedNativeVideoPids(await command(['shell','ps -ef'],'native_video_cleanup_verify'),extension).length) failures.push('daemon');
    } catch { failures.push('daemon'); }
   }
-  await command(['shell',`rm -f ${remote} ${log}`],'native_video_files_cleanup').catch(()=>failures.push('files'));
+  if(filesTouched)await command(['shell',`rm -f ${remote} ${log}`],'native_video_files_cleanup').catch(()=>failures.push('files'));
   active.delete(serial);streaming.delete(serial);
   try{runtimeLock?.release();}catch{failures.push('runtime-lock');}runtimeLock=undefined;
   if(ownerLock){
@@ -120,7 +95,10 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
  const abort=()=>{const e=new HarmonyError('COMMAND_ABORTED','Video stream cancelled');rejectStart?.(e);try{controller?.error(e);}catch{} void cleanup().catch(()=>{});};
  try {
   if(signal?.aborted) throw new HarmonyError('COMMAND_ABORTED','Video start cancelled');
-  const resource=await localDevEcoVideoResource(options);
+  const profile=nativeVideoProfile(options.quality);
+  const resource=await embeddedNativeVideoResource(options.resourceDirectory);
+  await mkdir(options.cacheDirectory,{recursive:true});
+  stats.quality=options.quality||'balanced';stats.encoderProfile=profile;
   ownerLock=acquireDeviceLock(serial,ownershipDirectory);
   runtimeLock=acquireDeviceLock(serial,nativeRuntimeLockDirectory());
   const oldText=await readFile(ownerPath,'utf8').catch(e=>{if(e.code==='ENOENT')return undefined;throw e;});
@@ -147,9 +125,12 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   const automationReady=await options.prepareAutomation?.();if(automationReady!==undefined)stats.automationReady=automationReady;
   localPort=await loopbackPort();
   await saveOwner();
+  filesTouched=true;
   await command(['file','send',resource.file,remote],'native_video_send',signal);
   started=true;
-  await command(['shell',`uitest start-daemon singleness --extension-name ${extension} -p${localPort} -scale2 -frameRate30 -bitRate6291456 -screenId0 -encodeType0 -iFrameInterval2000 -repeatInterval33 >${log} 2>&1 &`],'native_video_start',signal);
+  // The extension parses exact flag tokens; joined forms such as -scale2 are
+  // silently ignored and leave full-resolution/high-rate defaults active.
+  await command(['shell',`uitest start-daemon singleness --extension-name ${extension} -p ${localPort} -scale ${profile.scale} -frameRate ${profile.fps} -bitRate ${profile.bitRate} -screenId 0 -encodeType 0 -iFrameInterval 2000 -repeatInterval ${profile.repeatInterval} >${log} 2>&1 &`],'native_video_start',signal);
   // Query only the unique command. An aborted start is also cleaned below.
   for(let retry=0;retry<10;retry++){
    const ps=await command(['shell','ps -ef'],'native_video_pid');
@@ -176,10 +157,11 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   // Prepare the display before waiting for the native RPC endpoint. Some
   // builds defer capture setup until a display/capture event is processed.
   try{await command(['shell','power-shell wakeup'],'native_video_display_prepare',signal);}catch(error){if(signal?.aborted)throw error;}
-  if(options.captureInitialFrame){try{await options.captureInitialFrame();stats.initialCapturePrepared=true;}catch(error){if(signal?.aborted)throw error;stats.initialCapturePrepared=false;}}
+  // Capture a JPEG only if the encoder has not supplied a picture. Eager PNG
+  // capture/pull/re-encode on every video start wastes work on changing screens.
   try{await new Promise<void>((accept,reject)=>client.waitForReady(Date.now()+12000,(e:Error)=>e?reject(e):accept()));}catch(error){throw new HarmonyError('CAPABILITY_UNAVAILABLE','投屏进程已启动，但视频通道未能连接。插件已回收本次连接，可重新接入。',{cause:error,retryable:true,details:{stage:'video_channel',localPort}});}
   if(closed||signal?.aborted) throw new HarmonyError('COMMAND_ABORTED','Video start cancelled');
-  const packetizer=new HosVideoPacketizer(30,true);
+  const packetizer=new HosVideoPacketizer(profile.fps,true);
   const videoStarted=Date.now();
   let ready=false;
   let encodedReady=false,encodedConfig:Buffer|undefined;
@@ -204,7 +186,9 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   call.on('data',(reply:any)=>{
    if(closed) return;
    try {
-    const bytes=Buffer.from(reply.getPayloadMap().get('data')?.getValBytes_asU8()||[]);
+    const payload:Uint8Array=reply.getPayloadMap().get('data')?.getValBytes_asU8()||new Uint8Array();
+    if(payload.byteLength>8*1024*1024-9) throw new HarmonyError('INVALID_RESPONSE','Native video picture is too large');
+    const bytes=Buffer.from(payload.buffer,payload.byteOffset,payload.byteLength);
     stats.videoBytes=Number(stats.videoBytes)+bytes.length;
     const packets=packetizer.push(bytes);
     // Preserve config before IDR, and wait for an actual picture before returning HTTP success.
@@ -248,7 +232,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
      const config=Buffer.alloc(22);config.writeUInt32BE(2,0);config.writeUInt32BE(14,4);config[8]=2;config.writeUInt32BE(frame.width,9);config.writeUInt32BE(frame.height,13);config.writeUInt32BE(1,17);config[21]=2; // explicit initial-preview flag
      const picture=Buffer.alloc(17+frame.data.length);picture.writeUInt32BE(3,0);picture.writeUInt32BE(9+frame.data.length,4);picture[8]=1;picture.writeBigUInt64BE(BigInt(Date.now())*1000n,9);Buffer.from(frame.data).copy(picture,17);
      const dimensions=`${frame.width}x${frame.height}`;if(initialDimensions!==dimensions){controller!.enqueue(config);initialDimensions=dimensions;}controller!.enqueue(picture);stats.initialPreviewPictures=Number(stats.initialPreviewPictures||0)+1;
-     if(!ready){ready=true;stats.state='waiting_for_video';clearTimeout(firstTimer);acceptReady();void saveStats();}
+     if(!ready){ready=true;stats.state='waiting_for_video';stats.firstPictureMs=Date.now()-videoStarted;clearTimeout(firstTimer);acceptReady();void saveStats();}
     }
    }catch(error){if(!closed)stats.initialPreviewError=error instanceof Error?error.message:'Initial preview failed';}
    if(!closed&&!encodedReady)initialFrameTimer=setTimeout(()=>void initialFrame(),options.initialFrameIntervalMs||2000);
@@ -257,7 +241,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   await first;
   streaming.add(serial);
   armIdle();
-  statsTimer=setInterval(()=>{void saveStats();},5000);statsTimer.unref?.();
+  statsTimer=setInterval(()=>{void saveStats();},10000);statsTimer.unref?.();
   return {stream,changeDriven:true,isLive:()=>!closed,close:async()=>{try{controller?.close();}catch{}await cleanup();}};
  }catch(e){stats.error=e instanceof Error?e.message:'Native video failed';await cleanup();throw e;}
 }

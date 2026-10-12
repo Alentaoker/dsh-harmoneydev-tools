@@ -31,7 +31,8 @@ export async function PUT(request: Request) {
     if (body.video !== undefined && body.video !== null) {
       if (!body.video || typeof body.video !== "object" || Array.isArray(body.video)) throw new HarmonyError("INVALID_ARGUMENT", "video must be an object or null");
       const video = body.video as Record<string, unknown>;
-      if ((video.provider !== "bundled" && video.provider !== "hos-scrcpy")
+      if ((video.provider !== "native" && video.provider !== "bundled" && video.provider !== "hos-scrcpy")
+        || (video.quality !== undefined && !["efficient", "balanced", "smooth"].includes(video.quality as string))
         || (video.packageDirectory !== undefined && typeof video.packageDirectory !== "string")
         || (video.javaPath !== undefined && typeof video.javaPath !== "string")) {
         throw new HarmonyError("INVALID_ARGUMENT", "video requires a known provider and optional paths");

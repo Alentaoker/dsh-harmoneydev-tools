@@ -207,7 +207,8 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
   const [managerState, setManagerState] = useState<HarmonyState | null>(null);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [sdkPath, setSdkPath] = useState("");
-  const [videoProvider, setVideoProvider] = useState<"bundled" | "hos-scrcpy">("bundled");
+  const [videoProvider, setVideoProvider] = useState<"native" | "hos-scrcpy">("native");
+  const [videoQuality, setVideoQuality] = useState<"efficient" | "balanced" | "smooth">("balanced");
   const [hosPackageDirectory, setHosPackageDirectory] = useState("");
   const [javaPath, setJavaPath] = useState("");
   const [runtimeCandidates, setRuntimeCandidates] = useState<RuntimeCandidate[]>([]);
@@ -362,7 +363,8 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       setRuntimeCandidates(candidates);
       setSdkPath(optionalString(config?.hdcPath) ?? diagnostics.runtime.hdcPath ?? candidates[0]?.hdcPath ?? "");
       const video = recordOf(config?.video);
-      setVideoProvider(video?.provider === "hos-scrcpy" ? "hos-scrcpy" : "bundled");
+      setVideoProvider(video?.provider === "hos-scrcpy" ? "hos-scrcpy" : "native");
+      setVideoQuality(video?.quality === "efficient" || video?.quality === "smooth" ? video.quality : "balanced");
       setHosPackageDirectory(optionalString(video?.packageDirectory) ?? "");
       setJavaPath(optionalString(video?.javaPath) ?? "");
       setVisionModels(normalizeVisionModels(modelPayload?.models));
@@ -552,17 +554,6 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     setMediaNotice({ purpose: "mirror-initialization", message: copy("正在连接实时视频。连接成功后，画面上方会显示“实时视频流”。", "Connecting live video. A successful connection shows Live video above the image.") });
     requestFrame();
   };
-  const initializeMirror = async () => {
-    if (currentNativeVideoLive) {
-      setMediaNotice({ message: copy("实时视频已连接，可直接点击和拖动操作。", "Live video is connected. Click and drag to control.") });
-      return;
-    }
-    const result = await action({ action: "initialize_mirror" });
-    if (result === undefined) return;
-    setMediaNotice({ purpose: "mirror-initialization", message: copy("投屏组件已启动。请在手机点击“开始共享屏幕”并确认系统授权；授权后可点“接入实时视频”。", "Capture component started. Confirm screen sharing on the phone, then connect live video.") });
-    requestFrame();
-  };
-
   const mediaAction = useCallback((mediaActionName: "capture_screenshot" | "start_recording" | "stop_recording") => {
     if (!selectedSerial) return;
     const execute = async () => {
@@ -624,7 +615,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         hdcPath: sdkPath.trim() || null,
-        video: { provider: videoProvider, ...(videoProvider === "hos-scrcpy" ? { packageDirectory: hosPackageDirectory.trim(), ...(javaPath.trim() ? { javaPath: javaPath.trim() } : {}) } : {}) },
+        video: { provider: videoProvider, quality: videoQuality, ...(videoProvider === "hos-scrcpy" ? { packageDirectory: hosPackageDirectory.trim(), ...(javaPath.trim() ? { javaPath: javaPath.trim() } : {}) } : {}) },
         vision: visionEnabled ? { enabled: true, provider, modelId, shareScreenshotWithActionModel: shareScreenshot } : null,
       }),
     });
@@ -752,10 +743,11 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
 
       <div className={styles.settingGroup}>
-        <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong><small>{copy("可选 HOScrcpy；失败后暂时回退内置 HDC 投屏", "Optional HOScrcpy; falls back to bundled HDC video after failure")}</small></div>
-        <select aria-label={copy("投屏来源", "Video provider")} value={videoProvider} onChange={event => setVideoProvider(event.target.value as "bundled" | "hos-scrcpy")}>
-          <option value="bundled">{copy("内置 HDC 投屏", "Bundled HDC video")}</option><option value="hos-scrcpy">HOScrcpy</option>
+        <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong><small>{copy("原生 H.264 视频；无需安装投屏 HAP", "Native H.264 video; no mirror HAP installation")}</small></div>
+        <select aria-label={copy("投屏来源", "Video provider")} value={videoProvider} onChange={event => setVideoProvider(event.target.value as "native" | "hos-scrcpy")}>
+          <option value="native">{copy("插件原生 H.264", "Plugin native H.264")}</option><option value="hos-scrcpy">HOScrcpy</option>
         </select>
+        {videoProvider === "native" ? <label>{copy("视频质量", "Video quality")}<select value={videoQuality} onChange={event => setVideoQuality(event.target.value as "efficient" | "balanced" | "smooth")}><option value="efficient">{copy("低开销 · 15 帧", "Efficient · 15 fps")}</option><option value="balanced">{copy("均衡 · 24 帧（默认）", "Balanced · 24 fps (default)")}</option><option value="smooth">{copy("流畅 · 30 帧", "Smooth · 30 fps")}</option></select></label> : null}
         {videoProvider === "hos-scrcpy" ? <>
           <label>{copy("本地 dsh-hos-scrcpy 包目录", "Local dsh-hos-scrcpy package directory")}<input value={hosPackageDirectory} onChange={event => setHosPackageDirectory(event.target.value)} /></label>
           <label>{copy("Java 可执行文件完整路径（留空使用 PATH）", "Full Java executable path (blank uses PATH)")}<input value={javaPath} onChange={event => setJavaPath(event.target.value)} /></label>
@@ -932,7 +924,6 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
           {toolsVisited ? <WorkbenchTools key={selectedSerial} tab={toolTab} serial={selectedSerial} active={active} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onControlHandoff={clearControl} geometryId={liveFrame?.geometryId} cwd={cwd} ownerId={ownerId} initialDatabaseId={databaseSelection} onOpenDatabase={id => { setDatabaseSelection(id); changeToolTab("databases"); }} onOpenFiles={() => changeToolTab("files")} onShowTasks={() => changeToolTab("history")} onOpenLocalTerminal={onOpenLocalTerminal} onCleanupConfirmed={async () => { setError(null); await refresh(); }} /> : null}
           {toolTab === "logs" ? <HarmonyLogViewer active={active && toolsOpen} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} /> : null}
           {toolTab === "diagnostics" ? <div className={styles.moreBody}>
-            <button type="button" disabled={!canControl || busy} onClick={() => void initializeMirror()}>{copy("初始化投屏服务", "Initialize video service")}</button>
             <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}>{copy("重连视频流", "Reconnect video")}</button>
             <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(() => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`), payload => setTree(payload.snapshot))}>{copy("读取界面结构", "Read interface structure")}</button>
             <details className={styles.diagnostics}><summary>{copy("开发者信息", "Developer details")}</summary><pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre></details>

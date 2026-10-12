@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { verifyMirrorResource } from './verify-mirror-resource.mjs';
+import { verifyNativeVideoResource } from './verify-native-video-resource.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const vendor = path.join(root, 'vendor');
 const upstream = path.resolve(root, '..', 'Piora-source-review');
@@ -70,13 +70,10 @@ const css = client.outputFiles.find(p => p.path.endsWith('.css'))?.text || '';
 const style = `const style=document.createElement('style');style.dataset.plugin='dsh-harmony';style.textContent=${JSON.stringify(css)};document.head.appendChild(style);\n`;
 fs.writeFileSync(path.join(root, 'lib/client.js'), `window.__ModuleLoader__.load({id:'dsh-harmony',factory:(require)=>{const module={exports:{}};const exports=module.exports;\n${style}${js}\nreturn module.exports;}});`);
 fs.writeFileSync(path.join(root, 'client-inputs.json'), JSON.stringify(Object.keys(client.metafile.inputs), null, 2));
-for (const folder of ['third_party/harmony-tools', 'third_party/harmony-mirror']) fs.cpSync(path.join(vendor, folder), path.join(root, folder), { recursive: true });
-const mirrorResources = path.join(root, 'resources/harmony-mirror');
-if (fs.existsSync(mirrorResources)) {
-  await verifyMirrorResource(mirrorResources);
-  for (const file of ['OHScrcpyServer.hap', 'harmony-mirror-manifest.json', 'harmony-mirror-signature-verification.json', 'SOURCE.md'])
-    fs.copyFileSync(path.join(mirrorResources, file), path.join(root, 'third_party/harmony-tools/windows-x64', file));
-}
-for (const p of ['lib/harmony/runtime/sqlite-inspector.cjs', 'lib/harmony/runtime/PioraHapSigner.java', 'lib/harmony/audio/acoustic-provider.ps1']) {
+fs.cpSync(path.join(vendor, 'third_party/harmony-tools'), path.join(root, 'third_party/harmony-tools'), { recursive: true,
+  filter: source => !/OHScrcpyServer\.hap$|harmony-mirror-(?:manifest|signature-verification)\.json$/.test(source) });
+const nativeResource = await verifyNativeVideoResource(path.join(root, 'resources/native-video'));
+console.log(nativeResource.present ? `Embedded native video: ${nativeResource.byteLength} bytes` : 'Native video resource absent: import it for a local installation. Screenshot fallback remains available.');
+for (const p of ['lib/harmony/runtime/sqlite-inspector.cjs', 'lib/harmony/audio/acoustic-provider.ps1']) {
   fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true }); fs.copyFileSync(path.join(vendor, p), path.join(root, p));
 }

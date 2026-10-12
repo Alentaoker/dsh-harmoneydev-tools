@@ -1935,17 +1935,8 @@ export class HarmonyDeviceManager {
     };
   }
 
-  async initializeMirror(options: { serial: string; leaseToken: string; signal?: AbortSignal }): Promise<HarmonyOperationResult> {
-    return await this.operationTasks.track({ serial: options.serial, kind: "installation", title: "OHScrcpyServer.hap", target: "com.ohos.scrcpy.server" },
-      async started => await this.action("initialize_mirror", options.serial, options.leaseToken, undefined, options.signal, async (_backend, signal) => {
-      const backend = this.requireBackend();
-      if (!backend.mirrorPackagePath || !backend.initializeMirror) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Video initialization is unavailable");
-      const artifactPath = backend.mirrorPackagePath();
-      this.requireLease(options.serial, options.leaseToken);
-      if (signal.aborted) throw new HarmonyError("COMMAND_ABORTED", "Video initialization was cancelled");
-      started();
-      await backend.initializeMirror(options.serial, artifactPath, signal);
-    }), () => ({ verification: "device-confirmed" }));
+  async initializeMirror(_options: { serial: string; leaseToken: string; signal?: AbortSignal }): Promise<HarmonyOperationResult> {
+    throw new HarmonyError("CAPABILITY_UNAVAILABLE", "旧 HAP 投屏初始化已废弃。请直接连接插件内置原生视频。", {details:{reason:"mirror-hap-retired",dispatchState:"not-sent"}});
   }
 
   async updateConfig(

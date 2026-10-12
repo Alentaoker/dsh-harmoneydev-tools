@@ -15,8 +15,7 @@ export function harmonyEnvironment() {
     PIORA_DESKTOP_DATA_DIR: dataRoot,
     PIORA_HARMONY_CONFIG_PATH: join(dataRoot, 'harmony.json'),
     PIORA_HARMONY_TOOLS_DIR: join(pluginRoot, 'third_party', 'harmony-tools', 'windows-x64'),
-    PIORA_HARMONY_SIGNING_TEMPLATE_PATH: join(pluginRoot, 'third_party', 'harmony-mirror'),
-    PIORA_HARMONY_SIGNER_SOURCE_PATH: join(pluginRoot, 'lib', 'harmony', 'runtime', 'PioraHapSigner.java'),
+    DSH_HARMONY_NATIVE_VIDEO_DIR: join(pluginRoot, 'resources', 'native-video'),
     PI_CODING_AGENT_DIR: dataRoot,
     PIORA_RUNTIME_PROFILE: 'normal',
   };

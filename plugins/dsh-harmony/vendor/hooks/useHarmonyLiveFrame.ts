@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { HarmonyRequestError } from "@/lib/harmony/request-error";
+import { consumeHarmonyVideoPackets } from "@/lib/harmony/media/browser-video-packets";
 
 export type HarmonyFrameStatus = "idle" | "loading" | "live" | "error";
 export type HarmonyFrameMode = "idle" | "video" | "frames";
@@ -27,8 +28,6 @@ interface UseHarmonyLiveFrameOptions {
   canvasRef: RefObject<HTMLCanvasElement | null>;
 }
 
-const PACKET_HEADER_BYTES = 8;
-const MAX_PACKET_BYTES = 64 * 1024 * 1024;
 const VIDEO_CONFIG = 0x02;
 const VIDEO_FRAME = 0x03;
 const H264 = 0;
@@ -172,6 +171,8 @@ function reconnectDelay(failures: number): number {
 }
 
 export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
+  const [visibilityEpoch, setVisibilityEpoch] = useState(0);
+  const previewLifecycle = useRef<AbortController | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [status, setStatus] = useState<HarmonyFrameStatus>("idle");
   const [mode, setMode] = useState<HarmonyFrameMode>("idle");
@@ -179,6 +180,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [frame, setFrame] = useState<HarmonyLiveFrame | null>(null);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
+
+  useEffect(() => {
+    const update = () => {
+      if (document.hidden) previewLifecycle.current?.abort();
+      // A revision also handles a hide/show pair batched into one React render.
+      setVisibilityEpoch(epoch => epoch + 1);
+    };
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
 
   useEffect(() => {
     if (!options.active || !options.enabled || !options.serial || options.generation === undefined) {
@@ -189,9 +200,14 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       setFallbackReason(null);
       return;
     }
-    if (options.paused) return;
+    if (options.paused || document.hidden) {
+      setFrame(current => current?.geometryId ? { ...current, geometryId: undefined } : current);
+      setStatus("idle");
+      return;
+    }
 
     const lifecycle = new AbortController();
+    previewLifecycle.current = lifecycle;
     let disposed = false;
     let decoder: VideoDecoder | undefined;
     let decoderEpoch = 0;
@@ -201,6 +217,15 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let failures = 0;
     let hasFrame = false;
     let activeAttempt: StreamAttempt | undefined;
+    let drawingCanvas: HTMLCanvasElement | null = null;
+    let drawingContext: CanvasRenderingContext2D | null = null;
+    const contextFor = (canvas: HTMLCanvasElement) => {
+      if (drawingCanvas !== canvas) {
+        drawingCanvas = canvas;
+        drawingContext = canvas.getContext("2d", { alpha: false });
+      }
+      return drawingContext;
+    };
     const closeDecoder = () => {
       // A stream can change configuration without replacing its connection.
       // Invalidate callbacks before close, which may itself deliver an error.
@@ -228,7 +253,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     setError(null);
     setFallbackReason(null);
     const initialCanvas = options.canvasRef.current;
-    initialCanvas?.getContext("2d")?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
+    if (initialCanvas) contextFor(initialCanvas)?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
 
     const refreshGeometry = async (attempt: StreamAttempt, expected: StreamConfig) => {
       const isCurrent = () => !disposed && !attempt.controller.signal.aborted && activeAttempt === attempt && attempt.geometryConfig === expected;
@@ -252,7 +277,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       attempt.geometryTimer = window.setTimeout(() => {
         attempt.geometryTimer = undefined;
         void refreshGeometry(attempt, expected);
-      }, 1500);
+      }, expected.changeDriven ? 5000 : 1500);
     };
 
     const publishFrame = (width: number, height: number, attempt: StreamAttempt) => {
@@ -286,7 +311,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           canvas.width = width;
           canvas.height = height;
         }
-        canvas.getContext("2d", { alpha: false })?.drawImage(videoFrame, 0, 0, width, height);
+        contextFor(canvas)?.drawImage(videoFrame, 0, 0, width, height);
         publishFrame(width, height, attempt);
       } finally {
         videoFrame.close();
@@ -331,12 +356,12 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       const bitmap = await createImageBitmap(new Blob([bytes.slice().buffer as ArrayBuffer], { type: "image/jpeg" }));
       try {
         const canvas = options.canvasRef.current;
-        if (!canvas || disposed || activeAttempt !== attempt) return;
+        if (!canvas || disposed || activeAttempt !== attempt || attempt.controller.signal.aborted) return;
         if (canvas.width !== next.width || canvas.height !== next.height) {
           canvas.width = next.width;
           canvas.height = next.height;
         }
-        canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, next.width, next.height);
+        contextFor(canvas)?.drawImage(bitmap, 0, 0, next.width, next.height);
         publishFrame(next.width, next.height, attempt);
       } finally {
         bitmap.close();
@@ -358,7 +383,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         canvas.height = height;
       }
       const pixels = new Uint8ClampedArray(bytes.slice(8).buffer as ArrayBuffer);
-      canvas.getContext("2d", { alpha: false })?.putImageData(new ImageData(pixels, width, height), 0, 0);
+      contextFor(canvas)?.putImageData(new ImageData(pixels, width, height), 0, 0);
       publishFrame(width, height, attempt);
     };
 
@@ -413,32 +438,9 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     const consume = async (body: ReadableStream<Uint8Array>, attempt: StreamAttempt) => {
       const reader = body.getReader();
       attempt.reader = reader;
-      let pending = new Uint8Array();
       try {
-        while (!lifecycle.signal.aborted) {
-          const { done, value } = await reader.read();
-          if (done) throw attempt.failure ?? new Error("Harmony video connection closed");
-          if (!value?.length) continue;
-          if (pending.length + value.length > MAX_PACKET_BYTES + PACKET_HEADER_BYTES) {
-            throw new Error("Harmony video stream exceeded its buffer limit");
-          }
-          const combined = new Uint8Array(pending.length + value.length);
-          combined.set(pending);
-          combined.set(value, pending.length);
-          pending = combined;
-          let offset = 0;
-          while (pending.length - offset >= PACKET_HEADER_BYTES) {
-            const view = new DataView(pending.buffer, pending.byteOffset + offset, pending.length - offset);
-            const type = view.getUint32(0, false);
-            const length = view.getUint32(4, false);
-            if (length > MAX_PACKET_BYTES) throw new Error("Harmony video packet is too large");
-            if (pending.length - offset < PACKET_HEADER_BYTES + length) break;
-            const payload = pending.slice(offset + PACKET_HEADER_BYTES, offset + PACKET_HEADER_BYTES + length);
-            offset += PACKET_HEADER_BYTES + length;
-            await processPacket(type, payload, attempt);
-          }
-          pending = offset === 0 ? pending : pending.slice(offset);
-        }
+        await consumeHarmonyVideoPackets(reader, (type, payload) => processPacket(type, payload, attempt), { signal: attempt.controller.signal });
+        throw attempt.failure ?? new Error("Harmony video connection closed");
       } finally {
         await reader.cancel().catch(() => undefined);
         if (attempt.reader === reader) attempt.reader = undefined;
@@ -479,7 +481,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
               canvas.width = bitmap.width;
               canvas.height = bitmap.height;
             }
-            canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            contextFor(canvas)?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
             hasFrame = true;
             if (fallbackGeometry?.width !== bitmap.width || fallbackGeometry?.height !== bitmap.height || performance.now() - fallbackGeometryCheckedAt > 1500) {
               // Keep verified geometry during a same-size refresh so polling cannot cancel an in-progress mouse gesture.
@@ -606,13 +608,14 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     return () => {
       disposed = true;
       lifecycle.abort();
+      if (previewLifecycle.current === lifecycle) previewLifecycle.current = null;
       window.clearTimeout(activeAttempt?.watchdog);
       window.clearTimeout(activeAttempt?.geometryTimer);
       closeDecoder();
       void activeAttempt?.reader?.cancel().catch(() => undefined);
       void activeAttempt?.jpegChain.catch(() => undefined);
     };
-  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey]);
+  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey, visibilityEpoch]);
 
   return { frame, status, mode, error, fallbackReason, refresh };
 }
