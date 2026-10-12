@@ -65,11 +65,11 @@ test('默认缺日志目标在操作前失败；resolve_app 返回真实设备�
 test('AI 工具直接收到日志正文，get_logs 保留筛选参数', async () => {
   let tool, options;
   const ctx = { effect(fn) { fn(); }, tools: { register(t) { tool = t; } }, systemPrompt: { section() {} }, dshE2E: {
-    async get() { return { id: 'run' }; }, summary() { return { id: 'run', status: 'passed' }; },
+    async get() { return { id: 'run' }; }, summary() { return { id: 'run', status: 'passed' }; }, async report() { return { view: {} }; },
     async getDiagnostics() { return { entries: [entry(1, '10-12 01:00:01', '错误详情', 'error')] }; },
     async getLogs(id, o) { options = o; return { id, entries: [entry(1, '10-12 01:00:01', '正文')] }; },
   } };
-  apply(ctx); const exec = { signal: AbortSignal.timeout(2000) };
+  apply(ctx); const exec = { signal: AbortSignal.timeout(2000), agent: { id: 'test' } };
   const report = await tool.execute({ operation: 'get_report', id: 'run' }, exec);
   assert.equal(report.diagnostics.entries[0].message, '错误详情');
   const logs = await tool.execute({ operation: 'get_logs', id: 'run', level: 'error', limit: 2 }, exec);

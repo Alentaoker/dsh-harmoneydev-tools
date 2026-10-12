@@ -23,6 +23,8 @@ node scripts/register-bundles.mjs "$env:DSH_HOME/profiles/desktop/package.json"
 
 `scripts/install.ps1` 自动执行上述步骤并备份 profile 的配置、包清单和锁文件。备份在 `$DSH_HOME/backups/dsh-harmony-e2e-<time>`，不复制密钥、完整会话或其他数据。安装中途失败时停止，不继续启动。检查提示并依据备份人工恢复，不删用户数据目录。
 
+默认终端 Node 不是 24 时，显式传入 `-NodeExe` 和 `-NpmCli`（npm 的 `bin/npm-cli.js`）；安装脚本使用指定 Node 运行 npm，并将该 Node 加入子进程路径，退出时恢复当前终端的 PATH 和 DSH_HOME。完整示例及 Agent 验收清单见 [AI 安装指南](AI_INSTALLATION.md)。
+
 ## 启动目录
 
 只在某个终端设置环境变量，不会影响此前已运行的桌面进程，也不会永久改变桌面快捷方式。
@@ -57,6 +59,8 @@ node scripts/register-bundles.mjs "$env:DSH_HOME/profiles/web/package.json"
 3. DSH 会话顶部打开 dshHarmony，设备设置选择 DevEco SDK 的 `hdc.exe`，刷新。
 4. 给会话选择可用模型，打开 dshE2E，要求测试一个具体流程并给出明确验收条件。
 5. 测试结束检查“界面结果”和“日志状态”，读取正文，而不是只查看日志条数。
+
+6. 面板默认按会话隔离；旧记录可从“全部会话历史”只读查看。新建和复测按钮生成会话草稿，检查后发送才执行。使用路径见 [工作台指南](PANEL.md)。
 
 ## 更新
 

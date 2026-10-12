@@ -117,8 +117,10 @@ export function logPage(job, options = {}) {
   const offset = Number(options.offset ?? 0), limit = Number(options.limit ?? 100);
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('日志分页参数无效：offset≥0，limit 为 1～200');
   if (options.level && !Object.hasOwn(severity, options.level)) throw new Error('日志级别无效');
+  const from = options.from ? Date.parse(options.from) : undefined, until = options.until ? Date.parse(options.until) : undefined;
+  if (options.from && !Number.isFinite(from) || options.until && !Number.isFinite(until) || from !== undefined && until !== undefined && from > until) throw new Error('日志时间范围无效');
   const query = String(options.query || '').slice(0, 256).toLocaleLowerCase();
-  const all = (job.logs || []).filter(e => (!options.level || severity[e.level] >= severity[options.level]) && (!query || `${e.tag} ${e.message}`.toLocaleLowerCase().includes(query)));
+  const all = (job.logs || []).filter(e => (!options.level || severity[e.level] >= severity[options.level]) && (!query || `${e.tag} ${e.message}`.toLocaleLowerCase().includes(query)) && (from === undefined || Date.parse(e.capturedAt) >= from) && (until === undefined || Date.parse(e.capturedAt) <= until));
   let bytes = 0; const entries = [];
   for (const entry of all.slice(offset, offset + limit)) {
     const value = { timestamp: entry.timestamp, capturedAt: entry.capturedAt, pid: entry.pid, tid: entry.tid, level: entry.level, tag: entry.tag, message: redactLog(entry.message).slice(0, 2000) };

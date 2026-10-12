@@ -4,8 +4,9 @@ import { build } from 'esbuild';
 const root = resolve(import.meta.dirname, '..');
 await mkdir(join(root,'lib'),{recursive:true});
 for(const file of await readdir(join(root,'src'))) if(file.endsWith('.mjs')) await copyFile(join(root,'src',file),join(root,'lib',file));
-const client = await build({entryPoints:[join(root,'src/client.jsx')],bundle:true,format:'cjs',platform:'browser',target:'chrome130',external:['react','react/jsx-runtime'],jsx:'automatic',write:false});
-await writeFile(join(root,'lib/client.js'),`window.__ModuleLoader__.load({id:'dsh-e2e',factory:(require)=>{const module={exports:{}};const exports=module.exports;\n${client.outputFiles[0].text}\nreturn module.exports;}});`);
+const client = await build({entryPoints:[join(root,'src/client.jsx')],outfile:join(root,'lib/client.js'),bundle:true,format:'cjs',platform:'browser',target:'chrome130',external:['react','react/jsx-runtime'],jsx:'automatic',write:false});
+const js=client.outputFiles.find(f=>f.path.endsWith('.js')).text, css=client.outputFiles.find(f=>f.path.endsWith('.css'))?.text || '';
+await writeFile(join(root,'lib/client.js'),`window.__ModuleLoader__.load({id:'dsh-e2e',factory:(require)=>{const module={exports:{}};const exports=module.exports;const id='dsh-e2e-style';let style=document.getElementById(id);if(!style){style=document.createElement('style');style.id=id;document.head.appendChild(style);}style.textContent=${JSON.stringify(css)};\n${js}\nreturn module.exports;}});`);
 // rc.2 replaces entire preset declarations: preserve the latest Harmony layer.
 let patch = '- insert:\n    - id: dshE2E-host\n      name: dsh-e2e\n\n';
 let harmonyPatch;
