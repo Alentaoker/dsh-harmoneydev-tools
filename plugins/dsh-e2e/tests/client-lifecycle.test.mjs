@@ -37,3 +37,14 @@ test('切会话取消旧读取；旧响应不能覆盖新会话记录',async()=>
     const text=h.text(h.render('second',true));assert.equal(text.includes('新会话报告'),true);assert.equal(text.includes('旧会话报告'),false);
   }finally{h.dispose();}
 });
+test('日志页被正文大小缩短后，上一页回到真实起点，不固定减去 100',async()=>{
+  const h=await harness();const find=(tree,label)=>{if(!tree||typeof tree!=='object')return;if(Array.isArray(tree)){for(const child of tree){const result=find(child,label);if(result)return result;}return;}if(tree.type==='button'&&h.text(tree).includes(label))return tree;return find(tree.props?.children,label);};
+  try{
+    h.render('one',true);for(const r of h.requests)h.reply(r,r.url.includes('/status')?{active:[],devices:[]}:{runs:[{id:'log-run',name:'日志报告',status:'failed'}],counts:{all:1},filteredTotal:1,nextOffset:null});await tick();
+    find(h.render('one',true),'日志报告').props.onClick();h.render('one',true);h.reply(h.requests.at(-1),{run:{id:'log-run',name:'日志报告',status:'failed',sessionId:'one'},view:{args:{},totals:{modelCalls:0,actions:0},cache:[],logCollection:{status:'captured'},steps:[],files:[],screenshots:[]},related:[]});await tick();
+    find(h.render('one',true),'应用日志').props.onClick();h.render('one',true);h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:0,entries:[],nextOffset:69});await tick();
+    find(h.render('one',true),'下一页').props.onClick();h.render('one',true);assert.ok(h.requests.at(-1).url.includes('offset=69'));h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:69,entries:[],nextOffset:140});await tick();
+    find(h.render('one',true),'下一页').props.onClick();h.render('one',true);assert.ok(h.requests.at(-1).url.includes('offset=140'));h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:140,entries:[],nextOffset:200});await tick();
+    find(h.render('one',true),'上一页').props.onClick();h.render('one',true);assert.ok(h.requests.at(-1).url.includes('offset=69'));
+  }finally{h.dispose();}
+});
