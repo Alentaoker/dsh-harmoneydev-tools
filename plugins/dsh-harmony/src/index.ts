@@ -37,6 +37,7 @@ export function apply(ctx: any) {
           content.push({ type: 'image', attachment });
         } else content.push(block);
       }
+      if (taskRouting.enabled && args.execution === 'direct') content.push({ type: 'text', text: '本次为明确选择的 Harmony 直接调用，未创建 E2E 运行，未由 E2E 采集日志、独立验收或保存测试报告。' });
       return JSON.parse(JSON.stringify({ ...result, content, execution: { kind: 'direct', e2eRunCreated: false } }));
     },
   };

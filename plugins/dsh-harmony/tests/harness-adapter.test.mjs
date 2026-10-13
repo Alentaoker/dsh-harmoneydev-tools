@@ -43,6 +43,8 @@ test('unknown wait fields fail before device admission; E2E routing prevents que
     await assert.rejects(bridge.tool.execute({ operation: 'prepare_device', input: {} }, exec), /E2E_REQUIRED/);
     await assert.rejects(bridge.tool.execute({ operation: 'tap', input: { ref: 'old', generation: 1 } }, exec), /E2E_REQUIRED/);
     assert.equal(JSON.parse((await bridge.tool.execute({ operation: 'help', topic: 'wait' }, exec)).content[0].text).operation, 'wait');
+    const direct = await bridge.tool.execute({ operation: 'help', topic: 'wait', execution: 'direct', directReason: '只看接口' }, exec);
+    assert.match(direct.content.at(-1).text, /未创建 E2E/);
     busy = true;
     await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { waitMs: 100 }, execution: 'direct', directReason: '明确选择直控' }, exec), /E2E_ACTIVE/);
   } finally { unregister(); }
