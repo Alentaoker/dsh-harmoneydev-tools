@@ -36,3 +36,7 @@
 - 维护者运行 `scripts/package-release.ps1 -NodeExe <Node24> -OutputDirectory <新的外部目录>` 制作包；先在解压的干净目录构建/安装验证，再发布。该脚本不修改用户 profile，不创建 GitHub Release。
 
 宿主仍为 0.2.0-rc.2。版本 Skill 的较早迁移卡不能用于宣称支持新宿主；新版本需明确迁移和冷启动行为验收。
+
+## Harmony 0.4.3 / E2E 0.3.1
+
+两个插件一起构建升级并完整冷启动。E2E会注册默认测试路由；H仅支持新版本的准确同会话agent租约交接。旧H不提供路由桥接，组合升级不可只换E2E。保留原日志数据和工作台。只验当前页用runMode:verify_current，图片内容需verificationMode:visual及当前模型image能力。直控需execution:direct/directReason，未知参数执行前失败。旧报告保留，不补造历史动作；默认预算仍为300秒及每步骤30动作20次模型调用。

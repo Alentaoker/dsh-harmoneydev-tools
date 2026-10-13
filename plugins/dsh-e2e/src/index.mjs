@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { exportLogStream } from './log-archive.mjs';
 import { createService, inside } from './service.mjs';
 export const name = 'dshE2E';
-export const inject = ['connection', 'sessions', 'llm', 'dshHarmony'];
+export const inject = ['connection', 'sessions', 'llm', 'attachments', 'dshHarmony'];
 export function requestScope(request, write = false) {
   const p = new URL(request.url).searchParams, sessionId = p.get('sessionId');
   if (!sessionId || sessionId.length > 256) throw new Error('请在一个会话中打开 dshE2E');
@@ -12,6 +12,7 @@ export function requestScope(request, write = false) {
 }
 export function apply(ctx) {
   const service = createService(ctx);
+  ctx.effect(() => ctx.dshHarmony.automation.taskRouting.register({ busy: service.busy }), 'dshE2E: unified task routing');
   ctx.effect(() => ctx.reflect.provide('dshE2E', service), 'dshE2E: service');
   ctx.effect(() => () => service.dispose(), 'dshE2E: cleanup');
   registerRoutes(ctx, service);

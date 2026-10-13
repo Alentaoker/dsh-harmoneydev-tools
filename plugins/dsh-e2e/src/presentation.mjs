@@ -4,6 +4,7 @@ export function failureCategory(run) {
   if (['passed','queued','running'].includes(run.status)) return null;
   if (run.status === 'cancelled') return { label: '主动取消', suggestion: '确认设备状态后再创建新测试。' };
   if (run.status === 'interrupted') return { label: '宿主中断', suggestion: '检查设备及控制权，再创建复测。' };
+  if (run.errorCode === 'VISION_UNAVAILABLE') return { label:'视觉验收不可用', suggestion:'当前模型未确认支持图像；选择支持图像的模型，不要把图片节点当作图片内容。' };
   const text = run.error || '';
   if (/429|quota|AccountQuotaExceeded|额度|MODEL_UNAVAILABLE|模型请求/i.test(text)) return { label: '模型服务不可用', suggestion: '检查当前会话模型的额度和服务状态。' };
   if (/预算|调用次数|budget|时间限制|timeout|timed out/i.test(text)) return { label: '执行预算耗尽', suggestion: '缩小任务目标；必要时在复测中调整预算。' };

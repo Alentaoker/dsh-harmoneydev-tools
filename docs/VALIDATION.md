@@ -2,6 +2,22 @@
 
 最近更新：2026-10-14（Asia/Shanghai）。这份文档描述已观察到的结果，不表示所有设备、应用、投屏方式或模型都已稳定。
 
+## dshHarmony 0.4.3 / dshE2E 0.3.1 调用路径修复（2026-10-14）
+
+在上一版日志 P0 发布、工作树清洁并完成交接后继续。两个插件构建通过；Harmony 70/70、E2E 32/32、辅助脚本2/2。新增回归覆盖查询别名、操作专属参数、未知等待字段派发前拒绝、查询后转直控阻止、E2E进行中禁止插入、准确同会话租约交接及跨会话拒绝、只验当前页不执行goal、真正图片块送入验收、文本模型视觉失败落盘。E2E集成使用真实CLI和模拟设备/模型；不把模拟截图当作实机验图。
+
+本机冷启动安装 Harmony0.4.3/E2E0.3.1；原E盘data home及desktop profile保留。HDC USB Connected，Windows HDC Device状态OK。下面三次通过实际DSH会话调用已安装插件：
+
+| 验收 | 运行记录 | 结果与范围 |
+|---|---|---|
+| 自然语言任务默认入口 | 1061e7fa-8ef1-4de7-b4b7-11ad727e5db1 | E2E workflow通过，54.4秒，独立act/assert，只返回桌面一次；1505条目标日志、前后截图、JSON/Markdown/JUnit报告与释放确认。开始有缺参数尝试均在派发前拒绝，随后补充工具schema及字段说明。 |
+| 同会话直控→E2E交接 | 4372be03-7071-4f52-83fd-b6fdad1f5ec9 | 显式Harmony prepare后未先release，E2E verify_current语义断言通过，12.9秒、零操作/零模型调用；219条目标日志、前后截图和报告。未追认先前的prepare为完整测试。 |
+| 独立截图内容验收 | f5d4af3f-c084-4fcb-983a-0aac77e2fa73 | verify_current+visual通过，36.8秒、零操作、1次验收模型调用；模型image能力经宿主确认，verification-1.png实际作为image attachment送入模型且写入报告，visualInputCaptured=true。明确collectLogs:false，0条日志/disabled是预期。未借用外层ModLens作为E2E断言。 |
+
+三次均runnerExitCode=0、reportWritten=true、leaseReleased=true；边界及独立验收截图留在本机，不随源码上传。第二轮按完整参数调用无工具错误。验收说明明确区分本次流程、当前页补验、控件树与截图内容。视觉路径不自动换模型/供应商，不复用动作缓存。文本模型拒绝视觉已通过模拟回归；此台当前会话模型实际支持图像输入，因此本次实机visual通过。
+
+范围限制：没有再次发送猫图请求，未宣称所有应用异步生成、跨电脑安装或全部模型都已通过。上一版桌面原生文件选择器自动化及另一台实体电脑安装仍未验；日志布局/过滤/Ctrl+F/独立日志库和最大默认预算保留，视频架构无本次新增改造。
+
 ## dshHarmony 0.4.2 / dshE2E 0.3.0 日志 P0 验收
 
 本机安装位置为 E 盘原有插件目录，使用 `E:\DeepSeekHarness\Data` 的 desktop profile，宿主 DSH Desktop 0.2.0-rc.2。正常退出应用后备份、更新并冷启动；两个插件入口正常，新版日志标题实际显示 0.4.2。依赖链接仍引用原安装目录，配置、供应商和会话保留。

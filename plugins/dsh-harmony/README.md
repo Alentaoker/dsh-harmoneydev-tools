@@ -1,4 +1,4 @@
-# dshHarmony 0.4.2
+# dshHarmony 0.4.3
 
 DeepSeek Harness 的鸿蒙设备工作台，适配 Windows 和 DSH Desktop 0.2.0-rc.2。基于 Piora MIT 源码移植，使用当前 DSH_HOME，不读取 Piora 的供应商配置。
 

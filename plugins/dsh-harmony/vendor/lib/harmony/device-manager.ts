@@ -92,6 +92,8 @@ export interface AcquireLeaseOptions {
   owner: HarmonyLeaseOwner;
   ttlMs?: number;
   signal?: AbortSignal;
+  /** Host-only handoff: the exact active prompt identity, never supplied by phone tools. */
+  handoffFrom?: HarmonyLeaseOwner;
 }
 
 export interface HarmonyDeviceManagerOptions {
@@ -899,6 +901,7 @@ export class HarmonyDeviceManager {
     this.requireAdmission(options.serial);
     validateSerial(options.serial);
     validateOwner(options.owner);
+    if (options.handoffFrom) validateOwner(options.handoffFrom);
     const ttl = this.duration(options.ttlMs);
     return await this.enqueue("acquire_lease", async (signal) => {
       const device = await this.onlineDevice(options.serial, signal);
@@ -908,6 +911,26 @@ export class HarmonyDeviceManager {
       const existing = this.leasesBySerial.get(options.serial);
       if (existing) {
         if (existing.owner.id !== options.owner.id) {
+          const previous = options.handoffFrom;
+          if (previous?.kind === 'agent' && existing.owner.kind === 'agent' && options.owner.kind === 'agent'
+              && previous.id === existing.owner.id && previous.sessionId && previous.sessionId === existing.owner.sessionId
+              && previous.sessionId === options.owner.sessionId) {
+            if ((this.controllersByLease.get(existing.token)?.size ?? 0) > 0 || this.recordings.has(options.serial)) {
+              throw new HarmonyError('DEVICE_BUSY', 'Finish active input or recording before handing control to E2E');
+            }
+            clearTimeout(this.leaseTimers.get(existing.token));
+            this.leaseTimers.delete(existing.token);
+            this.leasesByToken.delete(existing.token);
+            this.forgetDeviceSnapshots(options.serial);
+            const acquiredAt = iso(this.now());
+            const lease: HarmonyLease = { ...existing, token: this.token(), leaseEpoch: ++this.leaseEpoch, owner: { ...options.owner }, acquiredAt, expiresAt: iso(this.now() + ttl) };
+            this.leasesBySerial.set(options.serial, lease);
+            this.leasesByToken.set(lease.token, lease);
+            this.scheduleLeaseExpiry(lease);
+            this.emit({ type: 'lease_released', timestamp: acquiredAt, serial: options.serial, ownerId: existing.owner.id, reason: 'agent_handoff' });
+            this.emit({ type: 'lease_acquired', timestamp: acquiredAt, lease });
+            return lease;
+          }
           throw new HarmonyError("LEASE_CONFLICT", "The device is controlled by another owner", {
             details: { ownerKind: existing.owner.kind, expiresAt: existing.expiresAt },
             retryable: true,

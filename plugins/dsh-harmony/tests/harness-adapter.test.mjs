@@ -33,4 +33,18 @@ test('invalid operation arguments and prior cancellation are rejected before dis
   await assert.rejects(bridge.tool.execute({ operation: 'list_devices' }, { agent: { id: 'cancelled-session' }, callId: 'cancelled-call', signal: AbortSignal.abort() }), /abort/i);
   await assert.rejects(bridge.tool.execute({ operation: 'help' }, { callId: 'no-session', signal: new AbortController().signal }), /active Harness session/);
 });
+
+test('unknown wait fields fail before device admission; E2E routing prevents query-to-direct bypass', async () => {
+  const exec = { agent: { id: 'routing-test' }, callId: 'routing-call', signal: new AbortController().signal };
+  await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { milliseconds: 25000 } }, exec), /milliseconds.*Unexpected|Unexpected.*milliseconds/);
+  let busy = false;
+  const unregister = bridge.automation.taskRouting.register({ busy: () => busy });
+  try {
+    await assert.rejects(bridge.tool.execute({ operation: 'prepare_device', input: {} }, exec), /E2E_REQUIRED/);
+    await assert.rejects(bridge.tool.execute({ operation: 'tap', input: { ref: 'old', generation: 1 } }, exec), /E2E_REQUIRED/);
+    assert.equal(JSON.parse((await bridge.tool.execute({ operation: 'help', topic: 'wait' }, exec)).content[0].text).operation, 'wait');
+    busy = true;
+    await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { waitMs: 100 }, execution: 'direct', directReason: '明确选择直控' }, exec), /E2E_ACTIVE/);
+  } finally { unregister(); }
+});
 test.after(async () => { for (const cleanup of effects.reverse()) if (typeof cleanup === 'function') await cleanup(); await rm(home, { recursive: true, force: true }); });

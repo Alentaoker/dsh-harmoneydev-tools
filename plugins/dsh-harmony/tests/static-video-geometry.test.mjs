@@ -6,6 +6,24 @@ import path from 'node:path';
 const file=new URL(`./.static-geometry-${process.pid}.mjs`,import.meta.url);
 const output=await build({entryPoints:['vendor/lib/harmony/device-manager.ts'],bundle:true,format:'esm',platform:'node',packages:'external',write:false,alias:{'@earendil-works/pi-ai':path.resolve('src/pi-ai.ts'),'@earendil-works/pi-coding-agent':path.resolve('src/pi-sdk.ts')},plugins:[{name:'unused-session-reader-test-boundary',setup(b){b.onLoad({filter:/src[\\/]pi-sdk\.ts$/},async args=>({contents:(await readFile(args.path,'utf8'))+'\nexport const SessionManager={open(){throw Error("Session reading is outside this geometry test")}};export function buildContextEntries(){throw Error("Session reading is outside this geometry test")}',loader:'ts',resolveDir:path.dirname(args.path)}));}}]});
 await writeFile(file,output.outputFiles[0].contents);const {HarmonyDeviceManager}=await import(file.href);test.after(()=>rm(file,{force:true}));
+test('agent handoff replaces the token only for the exact active owner in the same session',async()=>{
+ const backend={kind:'test',hdcPath:'test',listDevices:async()=>[{serial:'TEST-HANDOFF',state:'online',capabilities:{}}],dispose:async()=>{}};
+ const manager=new HarmonyDeviceManager({backend});
+ const owner={kind:'agent',id:'prompt-1',sessionId:'session-1'};
+ try {
+  const old=await manager.acquireLease({serial:'TEST-HANDOFF',owner});
+  const next={kind:'agent',id:'dshE2E:job-1',sessionId:'session-1'};
+  await assert.rejects(manager.acquireLease({serial:'TEST-HANDOFF',owner:next}),e=>e.code==='LEASE_CONFLICT');
+  await assert.rejects(manager.acquireLease({serial:'TEST-HANDOFF',owner:{...next,sessionId:'other'},handoffFrom:owner}),e=>e.code==='LEASE_CONFLICT');
+  await assert.rejects(manager.acquireLease({serial:'TEST-HANDOFF',owner:next,handoffFrom:{...owner,id:'wrong'}}),e=>e.code==='LEASE_CONFLICT');
+  const lease=await manager.acquireLease({serial:'TEST-HANDOFF',owner:next,handoffFrom:owner});
+  assert.notEqual(lease.token,old.token);assert.ok(lease.leaseEpoch>old.leaseEpoch);
+  assert.throws(()=>manager.renewLease(old.token),e=>e.code==='LEASE_EXPIRED');
+  assert.equal(manager.releaseOwner(owner.id),0);assert.equal(manager.renewLease(lease.token).owner.id,next.id);
+  assert.equal(manager.releaseLease(lease.token),true);
+ } finally {await manager.dispose();}
+});
+
 test('static change-driven video keeps coordinates valid only while its transport and geometry remain valid',async()=>{
  let now=10000,live=true,rotated=false;
  const config=Buffer.alloc(21);config.writeUInt32BE(2);config.writeUInt32BE(13,4);config[8]=2;config.writeUInt32BE(100,9);config.writeUInt32BE(200,13);config.writeUInt32BE(1,17);
