@@ -34,6 +34,7 @@ export function createRecordStore(root) {
             try { value = JSON.parse(await readFile(join(dir, 'record.json'), 'utf8')); }
             catch { value = compact(JSON.parse(await readFile(join(dir, 'dsh-run.json'), 'utf8'))); }
             if (value.id !== id || value.flowId !== flow) continue;
+            try { const logs = JSON.parse(await readFile(join(dir, 'app-logs.meta.json'), 'utf8')); value = { ...value, logCollection: logs, logCount: logs.persisted }; } catch {}
             if (activeStatuses.includes(value.status)) value = { ...value, status: 'interrupted', error: '宿主重启中断了这次测试，请检查设备后创建复测。', checks: { ...value.checks, leaseReleased: false } };
             await atomic(join(dir, 'record.json'), value);
             index.set(id, value);

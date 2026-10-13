@@ -1,46 +1,39 @@
-param(
-  [Parameter(Mandatory=$true)][string]$DshCli,
-  [Parameter(Mandatory=$true)][string]$DataHome,
-  [ValidateSet('desktop','web')][string]$DshProfile='desktop',
-  [string]$NodeExe,
-  [string]$NpmCli,
-  [switch]$PlanOnly
-)
+param([string]$DshCli,[string]$DshExe,[string]$DataHome,[ValidateSet('desktop','web')][string]$DshProfile='desktop',[string]$NodeExe,[string]$NpmCli,[switch]$PlanOnly)
 $ErrorActionPreference='Stop'
-$installRepoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$installCliPath=(Resolve-Path -LiteralPath $DshCli).Path
-$installDataRoot=[IO.Path]::GetFullPath($DataHome)
-$installProfilePath=Join-Path $installDataRoot ('profiles\'+$DshProfile)
-if (!(Test-Path -LiteralPath (Join-Path $installProfilePath 'package.json'))) { throw '目标 profile 尚未初始化，请先启动一次 DSH，并确认 DataHome 与启动环境一致。' }
+. (Join-Path $PSScriptRoot 'install-common.ps1')
+$installRepoRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$installEnvironment=Resolve-InstallEnvironment -DshCli $DshCli -DshExe $DshExe -DataHome $DataHome -NodeExe $NodeExe -NpmCli $NpmCli -DshProfile $DshProfile
+& $installEnvironment.NodeExe (Join-Path $PSScriptRoot 'preflight.mjs') $installRepoRoot $installEnvironment.ProfilePath
+if ($LASTEXITCODE -ne 0) { throw 'Package/profile preflight failed. No installation has been performed.' }
 $installPackagePaths=@((Join-Path $installRepoRoot 'plugins\dsh-harmony'),(Join-Path $installRepoRoot 'plugins\dsh-e2e'))
-if (!$NodeExe) { $NodeExe=(Get-Command node.exe -ErrorAction Stop).Source }
-$installNodePath=(Resolve-Path -LiteralPath $NodeExe).Path
-if (!$NpmCli) {
-  $installNpmCommand=(Get-Command npm.cmd -ErrorAction Stop).Source
-  $NpmCli=Join-Path (Split-Path $installNpmCommand) 'node_modules\npm\bin\npm-cli.js'
-}
-$installNpmPath=(Resolve-Path -LiteralPath $NpmCli).Path
-if ($PlanOnly) { [PSCustomObject]@{DataHome=$installDataRoot;Profile=$DshProfile;DshCli=$installCliPath;NodeExe=$installNodePath;NpmCli=$installNpmPath;Packages=$installPackagePaths;Mutates=$false} | ConvertTo-Json; return }
-$installNodeVersion=& $installNodePath --version
-if ($LASTEXITCODE -ne 0 -or $installNodeVersion -notmatch '^v24\.') { throw '请使用 Node.js 24。' }
+if ($PlanOnly) { $installEnvironment | Add-Member NoteProperty Packages $installPackagePaths; $installEnvironment | Add-Member NoteProperty Mutates $false; $installEnvironment | ConvertTo-Json -Depth 4; return }
 $installPreviousPath=$env:PATH
 $installPreviousDataHome=$env:DSH_HOME
-$env:PATH=(Split-Path $installNodePath)+[IO.Path]::PathSeparator+$env:PATH
-$env:DSH_HOME=$installDataRoot
+$installPreviousTelemetry=$env:E2E_TELEMETRY_DISABLED
+$env:PATH=(Split-Path $installEnvironment.NodeExe)+[IO.Path]::PathSeparator+$env:PATH
+$env:DSH_HOME=$installEnvironment.DataHome
+$env:E2E_TELEMETRY_DISABLED='1'
 try {
-$installBackup=Join-Path $installDataRoot ('backups\dsh-harmony-e2e-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $installBackup | Out-Null
-foreach($installConfig in @('package.json','pnpm-lock.yaml','cordis.yml','cordis.patch.yml','pnpm-workspace.yaml')) { $installFile=Join-Path $installProfilePath $installConfig; if(Test-Path -LiteralPath $installFile) { Copy-Item -LiteralPath $installFile -Destination $installBackup } }
-foreach($installPackage in $installPackagePaths) {
-  & $installNodePath $installNpmPath --prefix $installPackage ci --legacy-peer-deps
-  if($LASTEXITCODE -ne 0) { throw "依赖安装失败：$installPackage；备份：$installBackup" }
-  & $installNodePath $installNpmPath --prefix $installPackage run build
-  if($LASTEXITCODE -ne 0) { throw "构建失败：$installPackage；备份：$installBackup" }
-  & $installCliPath plugin --profile $DshProfile add $installPackage
-  if($LASTEXITCODE -ne 0) { throw "DSH 注册失败：$installPackage；备份：$installBackup。请检查是否部分安装，脚本不自动回滚。" }
-}
-& $installNodePath (Join-Path $PSScriptRoot 'register-bundles.mjs') (Join-Path $installProfilePath 'package.json')
-if($LASTEXITCODE -ne 0) { throw "注册 bundle 失败；备份：$installBackup" }
-[PSCustomObject]@{Installed=$installPackagePaths;DataHome=$installDataRoot;Profile=$DshProfile;Backup=$installBackup;Next='使用相同 DataHome 重启 DSH'} | ConvertTo-Json
-} finally { $env:PATH=$installPreviousPath; $env:DSH_HOME=$installPreviousDataHome }
-
+  $installBackup=Join-Path $installEnvironment.DataHome ('backups\dsh-harmony-e2e-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+  New-Item -ItemType Directory -Path $installBackup | Out-Null
+  foreach ($installConfig in @('package.json','pnpm-lock.yaml','cordis.yml','cordis.patch.yml','pnpm-workspace.yaml','compatibility.json')) {
+    $installFile=Join-Path $installEnvironment.ProfilePath $installConfig
+    if (Test-Path -LiteralPath $installFile -PathType Leaf) { Copy-Item -LiteralPath $installFile -Destination $installBackup }
+  }
+  # Build both packages before registering either, reducing partial profile updates.
+  foreach ($installPackage in $installPackagePaths) {
+    & $installEnvironment.NodeExe $installEnvironment.NpmCli --prefix $installPackage ci --legacy-peer-deps
+    if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed: $installPackage. Backup: $installBackup" }
+    & $installEnvironment.NodeExe $installEnvironment.NpmCli --prefix $installPackage run build
+    if ($LASTEXITCODE -ne 0) { throw "Build failed: $installPackage. Backup: $installBackup" }
+  }
+  foreach ($installPackage in $installPackagePaths) {
+    & $installEnvironment.DshCli plugin --profile $DshProfile add $installPackage
+    if ($LASTEXITCODE -ne 0) { throw "DSH registration failed: $installPackage. Backup: $installBackup. Stop and inspect partial changes; no automatic rollback is performed." }
+  }
+  & $installEnvironment.NodeExe (Join-Path $PSScriptRoot 'register-bundles.mjs') (Join-Path $installEnvironment.ProfilePath 'package.json')
+  if ($LASTEXITCODE -ne 0) { throw "Bundle registration failed. Backup: $installBackup" }
+  & $installEnvironment.NodeExe (Join-Path $PSScriptRoot 'verify-install.mjs') $installEnvironment.ProfilePath
+  if ($LASTEXITCODE -ne 0) { throw "Installed package verification failed. Backup: $installBackup" }
+  [PSCustomObject]@{Installed=$installPackagePaths;DataHome=$installEnvironment.DataHome;Profile=$DshProfile;Backup=$installBackup;Next='Cold-start DSH with the same DataHome; validate runtime and device separately.'} | ConvertTo-Json
+} finally { $env:PATH=$installPreviousPath; $env:DSH_HOME=$installPreviousDataHome; $env:E2E_TELEMETRY_DISABLED=$installPreviousTelemetry }

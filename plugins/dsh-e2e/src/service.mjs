@@ -5,6 +5,8 @@ import { mkdir, writeFile, readFile, readdir, symlink, stat } from 'node:fs/prom
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
+import { createLogLibrary } from './log-library.mjs';
+import { archivedLogPage, DEFAULT_LOG_BYTES } from './log-archive.mjs';
 import { resolveLogTarget, startLogCollection, logPage, logDigest } from './logs.mjs';
 import { createRecordStore, assertScope, paginate, activeStatuses } from './records.mjs';
 import { reportView, failureCategory } from './presentation.mjs';
@@ -35,15 +37,15 @@ export function validateRun(input) {
     }
     if (!steps.some(s => s.action === 'assert')) throw new Error('确定性流程必须包含至少一项结果断言');
   } else if (typeof input.expectation !== 'string' || !input.expectation.trim() || input.expectation.length > 2000) throw new Error('自然语言任务必须提供可从屏幕确认的验收条件 expectation');
-  return { goal, expectation: input.expectation, appBundle: input.appBundle, appAbility: input.appAbility, logAppBundle: input.logAppBundle, appName: input.appName?.trim(), collectLogs: input.collectLogs !== false, serial: input.serial, steps,
-    timeoutMs: Math.min(300000, Math.max(20000, Number(input.timeoutMs) || 120000)), maxActions: Math.min(30, Math.max(1, Math.floor(Number(input.maxActions) || 12))), maxModelCalls: Math.min(20, Math.max(1, Math.floor(Number(input.maxModelCalls) || 8))), name: String(input.name || goal).slice(0, 120) };
+  return { goal, expectation: input.expectation, appBundle: input.appBundle, appAbility: input.appAbility, logAppBundle: input.logAppBundle, appName: input.appName?.trim(), collectLogs: input.collectLogs !== false, logMaxBytes: Math.min(128 * 1024 * 1024, Math.max(1024 * 1024, Number(input.logMaxBytes) || DEFAULT_LOG_BYTES)), serial: input.serial, steps,
+    timeoutMs: Math.min(300000, Math.max(20000, Number(input.timeoutMs) || 300000)), maxActions: Math.min(30, Math.max(1, Math.floor(Number(input.maxActions) || 30))), maxModelCalls: Math.min(20, Math.max(1, Math.floor(Number(input.maxModelCalls) || 20))), name: String(input.name || goal).slice(0, 120) };
 }
 export function inside(root, requested) { const destination = resolve(root, requested); const rel = relative(root, destination); if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error('文件路径超出报告目录'); return destination; }
 export function createService(ctx, root = dataRoot) {
   const jobs = new Map(), secrets = new Map(); let server, baseURL, starting = false;
-  const store = createRecordStore(root);
+  const store = createRecordStore(root), logLibrary = createLogLibrary(root);
   const manager = () => { const m = ctx.dshHarmony.automation?.getManager?.(); if (!m) throw new Error('需要支持自动化桥接的 dshHarmony，请重启 DSH 加载更新'); return m; };
-  const summary = job => ({ id: job.id, flowId: job.flowId, name: job.args?.name || job.name, status: job.status, createdAt: job.createdAt, completedAt: job.completedAt, durationMs: job.durationMs, reportUrl: `/api/dsh-e2e/report?id=${job.id}&sessionId=${encodeURIComponent(job.sessionId || '')}`, checks: job.checks, error: job.error, failure: failureCategory(job), device: typeof job.device === 'string' ? job.device : job.device?.name || job.device?.model, cache: job.cache, sessionId: job.sessionId, progress: job.progress, logCollection: job.logCollection, logCount: job.logs?.length || job.logCount || 0, parentRunId: job.parentRunId, relation: job.relation, archived: job.archived || false });
+  const summary = job => ({ id: job.id, flowId: job.flowId, name: job.args?.name || job.name, status: job.status, createdAt: job.createdAt, completedAt: job.completedAt, durationMs: job.durationMs, reportUrl: `/api/dsh-e2e/report?id=${job.id}&sessionId=${encodeURIComponent(job.sessionId || '')}`, checks: job.checks, error: job.error, failure: failureCategory(job), device: typeof job.device === 'string' ? job.device : job.device?.name || job.device?.model, cache: job.cache, sessionId: job.sessionId, progress: job.progress, logCollection: job.logCollection, logCount: job.logCollection?.persisted ?? job.logCount ?? job.logs?.length ?? 0, parentRunId: job.parentRunId, relation: job.relation, archived: job.archived || false });
   async function persist(job) { const record = summary(job); await store.save(record, { ...record, args: job.args, logs: job.logs, evidence: job.evidence, evidenceWarnings: job.evidenceWarnings, modelIdentity: job.modelIdentity, engine: 'e2e@0.19.0' }); }
   async function evidence(job, label, name) {
     if (job.controller.signal.aborted) return;
@@ -59,7 +61,7 @@ export function createService(ctx, root = dataRoot) {
     signal.throwIfAborted(); if (job.lease) m.renewLease(job.lease.token, 60000);
     const common = { serial: job.device.serial, leaseToken: job.lease.token, signal };
     if (operation === 'device') return { name: job.device.name, model: job.device.model, osVersion: job.device.osVersion, apiVersion: job.device.apiVersion };
-    if (operation === 'logs') { const entries = job.pendingLogs.splice(0); return { entries }; }
+    if (operation === 'logs') { const entries = job.pendingLogs.splice(0); job.pendingLogBytes = 0; return { entries }; }
     if (operation === 'observe') {
       job.progress = { ...job.progress, stage: 'observing' };
       const raw = await m.snapshot({ ...common, includeTree: true, includeScreenshot: !!input.pixels });
@@ -169,11 +171,11 @@ export function createService(ctx, root = dataRoot) {
     finally {
       job.progress = { ...job.progress, stage: 'finishing' };
       if (job.lease) await evidence(job, job.status === 'passed' ? '验收后页面' : '结束时页面', 'after.png');
-      clearTimeout(timer); clearInterval(renewal); await job.logCollector?.stop(); secrets.delete(job.token);
+      clearTimeout(timer); clearInterval(renewal); await job.logCollector?.stop(); await job.logArchive?.close(); secrets.delete(job.token);
       if (job.lease) { try { const released = await m.releaseLease(job.lease.token); job.checks = { ...job.checks, leaseReleased: released === true }; } catch (error) { job.error = `${job.error || ''} 释放控制失败：${error.message}`; job.status = 'failed'; } }
       job.checks = { ...job.checks, logTargetResolved: !!job.logTarget, logStreamConfirmed: !!job.logCollection?.streamConfirmed, logsCaptured: job.logs.length > 0 };
       job.completedAt = new Date().toISOString(); job.durationMs = Date.now() - started;
-      try { await writeFile(join(job.directory, 'app-logs.jsonl'), job.logs.map(e => JSON.stringify(e)).join('\n') + (job.logs.length ? '\n' : '')); await persist(job); }
+      try { if (!job.logArchive) await writeFile(join(job.directory, 'app-logs.jsonl'), job.logs.map(e => JSON.stringify(e)).join('\n') + (job.logs.length ? '\n' : '')); await persist(job); }
       finally { jobs.delete(job.id); }
     }
     return summary(job);
@@ -193,7 +195,7 @@ export function createService(ctx, root = dataRoot) {
   }
   async function list() { const all = new Map((await store.all()).map(v => [v.id, v])); for (const job of jobs.values()) all.set(job.id, summary(job)); return [...all.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); }
   async function get(id, scope) { if (!/^[0-9a-f-]{36}$/.test(id || '')) throw new Error('报告 ID 无效'); if (jobs.has(id)) { const job = jobs.get(id); assertScope(job, scope); return job; } return store.get(id, scope); }
-  return { run, list, get, summary, listPage: async options => paginate(await list(), options), getLogs: async (id, options, scope) => logPage(await get(id, scope), options), getDiagnostics: async (id, scope) => logDigest(await get(id, scope)),
+  return { run, list, get, summary, logLibrary, listPage: async options => paginate(await list(), options), getLogs: async (id, options, scope) => { const job = await get(id, scope); return await archivedLogPage(job, options) ?? logPage(job, options); }, getDiagnostics: async (id, scope) => logDigest(await get(id, scope)),
     async report(id, scope) { const job = await get(id, scope); let report = job.report; if (!report) try { report = JSON.parse(await readFile(join(job.directory, 'e2e/report.json'), 'utf8')); } catch {} const related = (await list()).filter(r => r.id !== job.id && r.sessionId === job.sessionId && (r.id === job.parentRunId || r.parentRunId === job.id || job.parentRunId && r.parentRunId === job.parentRunId)); return { run: summary(job), view: reportView(job, report), related: related.slice(0, 50), diagnostics: logDigest(job) }; },
     async archive(id, archived, scope) { const job = await get(id, scope); if (job.controller) throw new Error('进行中或收尾中的任务不能归档'); job.archived = archived; await persist(job); return summary(job); },
     async resolveApp(query = '', serial, signal, offset = 0, limit = 100) {
@@ -204,10 +206,10 @@ export function createService(ctx, root = dataRoot) {
       const apps = await m.applications(device.serial, query, undefined, signal);
       return { query, total: apps.length, offset, candidates: apps.slice(offset, offset + limit).map(({ bundleName, label, process }) => ({ bundleName, label, process })), nextOffset: offset + limit < apps.length ? offset + limit : null, resolved: apps.length === 1 ? apps[0].bundleName : null, instruction: '候选来自设备，不要猜包名；名称无法查询时留空 query 分页查看已安装应用。日志目标传 logAppBundle，不会重启应用。' };
     },
-    status: async scope => ({ plugin: 'dshE2E', version: '0.2.0', e2eVersion: '0.19.0', storage: root, harmonyReady: !!ctx.dshHarmony.automation, devices: (await manager().listDevices()).map(({ serial, name, model, state }) => ({ serial, name, model, state })), busy: jobs.size > 0, active: [...jobs.values()].filter(j => !scope || scope.all || j.sessionId === scope.sessionId).map(j=>({...summary(j),status:j.status==='queued'?'queued':'running'})) }),
+    status: async scope => ({ plugin: 'dshE2E', version: '0.3.0', e2eVersion: '0.19.0', storage: root, harmonyReady: !!ctx.dshHarmony.automation, devices: (await manager().listDevices()).map(({ serial, name, model, state }) => ({ serial, name, model, state })), busy: jobs.size > 0, active: [...jobs.values()].filter(j => !scope || scope.all || j.sessionId === scope.sessionId).map(j=>({...summary(j),status:j.status==='queued'?'queued':'running'})) }),
     async cancel(id, scope) { const job = await get(id, scope); if (!job.controller) throw new Error('此任务已结束'); job.controller.abort(new Error('用户取消')); await job.promise; return summary(job); },
     async replay(id, sessionId, model, signal) { const job = await get(id, { sessionId }); if (job.controller) throw new Error('请先等待原任务结束'); if (job.status !== 'passed') throw new Error('仅通过的流程可以复用；未通过的任务请调整复测'); return run(job.args, sessionId, model, signal, { parentRunId: id, relation: 'replay' }); },
-    async retry(id, changes, sessionId, model, signal) { const job = await get(id, { sessionId }); if (job.controller) throw new Error('请先结束原任务'); const allowed = ['goal', 'expectation', 'name', 'appBundle', 'appAbility', 'logAppBundle', 'appName', 'collectLogs', 'serial', 'steps', 'timeoutMs', 'maxActions', 'maxModelCalls']; const patch = Object.fromEntries(allowed.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])); const next = { ...job.args, ...patch }; if (changes.clearSteps === true) delete next.steps; return run(next, sessionId, model, signal, { parentRunId: id, relation: 'retry' }); },
+    async retry(id, changes, sessionId, model, signal) { const job = await get(id, { sessionId }); if (job.controller) throw new Error('请先结束原任务'); const allowed = ['goal', 'expectation', 'name', 'appBundle', 'appAbility', 'logAppBundle', 'appName', 'collectLogs', 'logMaxBytes', 'serial', 'steps', 'timeoutMs', 'maxActions', 'maxModelCalls']; const patch = Object.fromEntries(allowed.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])); const next = { ...job.args, ...patch }; if (changes.clearSteps === true) delete next.steps; return run(next, sessionId, model, signal, { parentRunId: id, relation: 'retry' }); },
     async dispose() { for (const job of jobs.values()) if (['queued', 'running'].includes(job.status)) job.controller.abort(new Error('DSH 正在关闭')); await Promise.allSettled([...jobs.values()].map(j => j.promise)); if (server) await new Promise(r => server.close(r)); },
   };
 }

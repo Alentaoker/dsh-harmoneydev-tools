@@ -1,10 +1,39 @@
-export function createLogMatcher(query: string, regex: boolean): { matches: (text: string) => boolean; error: string | null } {
+/** Bounded regular-expression subset: no groups/backreferences/lookarounds and
+ * at most one repetition; non-terminal repetitions must be start-anchored. */
+export function validateLogRegex(query: string): string | null {
+  if (query.length > 256) return "正则表达式最多 256 个字符";
+  const source = query.replace(/\\./g, "_").replace(/\[[^\]]*\]/g, "_");
+  if (/[()]/.test(source) || /\\[1-9]|\\k</.test(query)) return "为保持日志响应，正则不支持分组、环视或反向引用";
+  if ((source.match(/[*+?]|\{\d+(?:,\d*)?\}/g) ?? []).length > 1) return "正则最多包含一个重复量词";
+  if (!source.startsWith("^") && /(?:[*+?]|\{\d+(?:,\d*)?\})[^$]/.test(source)) return "重复量词后有其它内容时，请使用 ^ 锚定起点（例如 ^.*error）";
+  if (/\{\d{5,}/.test(source)) return "正则重复次数过大";
+  return null;
+}
+
+export function createLogMatcher(query: string, regex: boolean, caseSensitive = false): { matches: (text: string) => boolean; error: string | null } {
   if (!query) return { matches: () => true, error: null };
-  if (!regex) { const needle = query.toLocaleLowerCase(); return { matches: (text) => text.toLocaleLowerCase().includes(needle), error: null }; }
+  if (!regex) { const needle = caseSensitive ? query : query.toLocaleLowerCase(); return { matches: (text) => (caseSensitive ? text : text.toLocaleLowerCase()).includes(needle), error: null }; }
+  const unsafe = validateLogRegex(query);
+  if (unsafe) return { matches: () => false, error: unsafe };
   try {
-    const pattern = new RegExp(query, "i");
-    return { matches: (text) => pattern.test(text), error: null };
+    const pattern = new RegExp(query, caseSensitive ? "" : "i");
+    return { matches: (text) => pattern.test(text.slice(0, 65536)), error: null };
   } catch (error) { return { matches: () => false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
+export function logHighlightParts(text: string, query: string, regex = false, caseSensitive = false): { text: string; match: boolean }[] {
+  if (!query || (regex && validateLogRegex(query))) return [{ text, match: false }];
+  try {
+    const pattern = new RegExp(regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), caseSensitive ? "g" : "gi");
+    const parts: { text: string; match: boolean }[] = []; let offset = 0, found: RegExpExecArray | null;
+    while ((found = pattern.exec(text)) && parts.length < 128) {
+      if (!found[0].length) break;
+      if (found.index > offset) parts.push({ text: text.slice(offset, found.index), match: false });
+      parts.push({ text: found[0], match: true }); offset = found.index + found[0].length;
+    }
+    if (offset < text.length) parts.push({ text: text.slice(offset), match: false });
+    return parts.length ? parts : [{ text, match: false }];
+  } catch { return [{ text, match: false }]; }
 }
 
 /** HiLog supplies month/day and device-clock time, without year or timezone. */

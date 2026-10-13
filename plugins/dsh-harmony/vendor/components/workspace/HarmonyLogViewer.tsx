@@ -1,12 +1,15 @@
 "use client";
 
 import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createLogMatcher, createLogTimeRange } from "@/lib/harmony/log-filter";
+import { createLogMatcher, createLogTimeRange, logHighlightParts } from "@/lib/harmony/log-filter";
+import { retainLogBatch } from "@/lib/harmony/log-buffer";
+import { logApplicationPids, logBelongsToApplication } from "@/lib/harmony/log-application";
 import { AliIcon } from "../AliIcon";
 import styles from "./HarmonyPanel.module.css";
 
 type LogLevel = "debug" | "info" | "warn" | "error" | "fatal" | "unknown";
 type DeviceProcess = { pid: number; name: string };
+type DeviceApplication = { bundleName: string; label?: string; process?: string };
 type LogEntry = { timestamp?: string; level: LogLevel; pid?: number; tid?: number; domain?: string; tag?: string; message: string; raw: string };
 
 async function requestJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -26,11 +29,27 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   copy: (zh: string, en: string) => string;
 }) {
   const [processes, setProcesses] = useState<DeviceProcess[]>([]);
+  const [applications, setApplications] = useState<DeviceApplication[]>([]);
+  const [bundle, setBundle] = useState("");
+  const [appProcess, setAppProcess] = useState<string>();
+  const [appError, setAppError] = useState("");
+  const [processUpdatedAt, setProcessUpdatedAt] = useState("");
   const [pid, setPid] = useState("");
   const [level, setLevel] = useState("");
   const [query, setQuery] = useState("");
   const [regex, setRegex] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
   const [tag, setTag] = useState("");
+  const [tagRegex, setTagRegex] = useState(false);
+  const [tid, setTid] = useState("");
+  const [domain, setDomain] = useState("");
+  const [findOpen, setFindOpen] = useState(true);
+  const [findText, setFindText] = useState("");
+  const [findRegex, setFindRegex] = useState(false);
+  const [findCase, setFindCase] = useState(false);
+  const [findIndex, setFindIndex] = useState(-1);
+  const rootRef = useRef<HTMLElement>(null);
+  const findRef = useRef<HTMLInputElement>(null);
   const [fromTime, setFromTime] = useState("");
   const [toTime, setToTime] = useState("");
   const [dropped, setDropped] = useState(0);
@@ -49,6 +68,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const outputRef = useRef<HTMLDivElement>(null);
+  const columnsRef = useRef<HTMLDivElement>(null);
   const rowHeightRef = useRef(rowHeight);
   const visibleEntriesRef = useRef<Array<LogEntry & { id: number }>>([]);
   rowHeightRef.current = rowHeight;
@@ -87,34 +107,63 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   }, [serial, refreshKey]);
 
   useEffect(() => {
+    setBundle(""); setAppProcess(undefined); setApplications([]); setAppError("");
+  }, [serial]);
+
+  useEffect(() => {
+    if (!active || !online || !serial) return;
+    const controller = new AbortController();
+    void requestJson<{ applications: DeviceApplication[] }>(`/api/harmony/apps?serial=${encodeURIComponent(serial)}`, controller.signal)
+      .then(payload => { if (!controller.signal.aborted) setApplications(payload.applications.slice(0, 5000).sort((a, b) => (a.label ?? a.bundleName).localeCompare(b.label ?? b.bundleName))); })
+      .catch(failure => { if (!controller.signal.aborted) setAppError(failure instanceof Error ? failure.message : String(failure)); });
+    return () => controller.abort();
+  }, [active, online, serial]);
+
+  useEffect(() => {
+    setAppProcess(undefined);
+    if (!active || !online || !serial || !bundle) return;
+    const controller = new AbortController();
+    void requestJson<{ applications: DeviceApplication[] }>(`/api/harmony/apps?serial=${encodeURIComponent(serial)}&bundleName=${encodeURIComponent(bundle)}`, controller.signal)
+      .then(payload => { if (!controller.signal.aborted) { setAppProcess(payload.applications.find(app => app.bundleName === bundle)?.process); setAppError(""); } })
+      .catch(failure => { if (!controller.signal.aborted) setAppError(failure instanceof Error ? failure.message : String(failure)); });
+    return () => controller.abort();
+  }, [active, online, serial, bundle]);
+
+  useEffect(() => {
     setPid("");
     if (!active || !online || !serial) {
       setProcesses([]);
       return;
     }
     const controller = new AbortController();
-    void requestJson<{ processes: DeviceProcess[] }>(`/api/harmony/logs?action=processes&serial=${encodeURIComponent(serial)}`, controller.signal)
-      .then((payload) => setProcesses(payload.processes))
-      .catch((failure) => {
-        if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
-      });
-    return () => controller.abort();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try { const payload = await requestJson<{ processes: DeviceProcess[] }>(`/api/harmony/logs?action=processes&serial=${encodeURIComponent(serial)}`, controller.signal); if (!controller.signal.aborted) { setProcesses(payload.processes); setProcessUpdatedAt(new Date().toLocaleTimeString()); } }
+      catch (failure) { if (!controller.signal.aborted) setAppError(failure instanceof Error ? failure.message : String(failure)); }
+      if (!controller.signal.aborted) timer = setTimeout(() => void poll(), 5000);
+    };
+    void poll();
+    return () => { controller.abort(); clearTimeout(timer); };
   }, [active, online, serial, refreshKey]);
 
   useEffect(() => {
     if (!active || !online || !serial) return;
     setLoading(true); setError(null);
     const stream = new EventSource(`/api/harmony/logs/events?serial=${encodeURIComponent(serial)}`);
+    let changed = false;
+    const flushDisplay = setInterval(() => {
+      if (changed && !pausedRef.current) { changed = false; captureAnchor(); setEntries(buffered.current); }
+    }, 250);
     stream.addEventListener("connected", () => { setLoading(false); setError(null); });
     stream.addEventListener("logs", (event) => {
       try {
         const payload = JSON.parse((event as MessageEvent).data) as { entries: LogEntry[]; dropped?: number };
-        const combined = [...buffered.current, ...payload.entries.map((entry) => ({ ...entry, id: nextId.current++ }))];
-        const removed = Math.max(0, combined.length - 10000);
-        buffered.current = combined.slice(-10000);
+        const batch = retainLogBatch(buffered.current, payload.entries.map((entry) => ({ ...entry, id: nextId.current++ })));
+        const removed = batch.removed;
+        buffered.current = batch.entries;
         if (removed) setEvicted(count => count + removed);
         if (Number.isSafeInteger(payload.dropped) && payload.dropped! > 0) setDropped(count => count + payload.dropped!);
-        if (!pausedRef.current) { captureAnchor(); setEntries(buffered.current); }
+        changed = true;
       } catch { setError(copy("日志数据无法解析", "Invalid log data")); }
     });
     stream.addEventListener("error", (event) => {
@@ -123,7 +172,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
       if (data) { try { setError(JSON.parse(data).message); } catch { setError(String(data)); } stream.close(); }
       else setError(copy("日志连接中断，正在重新连接…", "Log connection interrupted; reconnecting…"));
     });
-    return () => stream.close();
+    return () => { clearInterval(flushDisplay); stream.close(); };
     // copy changes with locale; filter and pause must not restart device capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, online, refreshKey, serial]);
@@ -139,12 +188,39 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   }, []);
 
   const selectedProcess = useMemo(() => processes.find((process) => String(process.pid) === pid), [pid, processes]);
+  const applicationPids = useMemo(() => logApplicationPids(processes, bundle, appProcess), [processes, bundle, appProcess]);
   const matchingPids = useMemo(() => new Set(processes.filter(process => process.name.toLocaleLowerCase().includes(pid.toLocaleLowerCase())).map(process => process.pid)), [pid, processes]);
-  const matcher = useMemo(() => createLogMatcher(deferredQuery, regex), [deferredQuery, regex]);
+  const matcher = useMemo(() => createLogMatcher(deferredQuery, regex, caseSensitive), [deferredQuery, regex, caseSensitive]);
+  const tagMatcher = useMemo(() => createLogMatcher(tag, tagRegex, caseSensitive), [tag, tagRegex, caseSensitive]);
   const timeRange = useMemo(() => createLogTimeRange(fromTime, toTime), [fromTime, toTime]);
-  const visibleEntries = useMemo(() => entries.filter((entry) => (!pid || String(entry.pid) === pid || (entry.pid !== undefined && matchingPids.has(entry.pid)))
-    && (!level || entry.level === level) && (!tag || (entry.tag ?? "").toLocaleLowerCase().includes(tag.toLocaleLowerCase()))
-    && timeRange.matches(entry.timestamp) && matcher.matches(entry.raw)), [entries, pid, matchingPids, level, tag, timeRange, matcher]);
+  const severity: Record<string, number> = { unknown: -1, debug: 0, info: 1, warn: 2, error: 3, fatal: 4 };
+  const visibleEntries = useMemo(() => entries.filter((entry) => logBelongsToApplication(entry, bundle, applicationPids, appProcess) && (!pid || String(entry.pid) === pid || (entry.pid !== undefined && matchingPids.has(entry.pid)))
+    && (!level || severity[entry.level] >= severity[level]) && tagMatcher.matches(entry.tag ?? "")
+    && (!tid || String(entry.tid) === tid) && (!domain || (entry.domain ?? "").toLocaleLowerCase().includes(domain.toLocaleLowerCase()))
+    && timeRange.matches(entry.timestamp) && matcher.matches(entry.raw)), [entries, bundle, applicationPids, appProcess, pid, matchingPids, level, tagMatcher, tid, domain, timeRange, matcher]);
+  const deferredFind = useDeferredValue(findText);
+  const findMatcher = useMemo(() => createLogMatcher(deferredFind, findRegex, findCase), [deferredFind, findRegex, findCase]);
+  const findRows = useMemo(() => deferredFind && !findMatcher.error ? visibleEntries.reduce<number[]>((rows, entry, index) => { if (findMatcher.matches(entry.raw)) rows.push(index); return rows; }, []) : [], [visibleEntries, deferredFind, findMatcher]);
+  useEffect(() => { setFindIndex(-1); }, [deferredFind, findRegex, findCase, bundle, pid, level, tag, tid, domain, deferredQuery]);
+  useEffect(() => { if (findOpen) findRef.current?.focus(); }, [findOpen]);
+  useEffect(() => {
+    if (!active) return;
+    const handle = (event: KeyboardEvent) => {
+      const scope = rootRef.current?.closest('[data-harmony-panel]') ?? rootRef.current;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && scope?.contains(event.target as Node)) {
+        event.preventDefault(); event.stopPropagation(); setFindOpen(true); findRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handle, true);
+    return () => document.removeEventListener("keydown", handle, true);
+  }, [active]);
+  const jumpFind = (delta: number) => {
+    if (!findRows.length || !outputRef.current) return;
+    const next = findIndex < 0 ? (delta > 0 ? 0 : findRows.length - 1) : (findIndex + delta + findRows.length) % findRows.length;
+    setFindIndex(next); following.current = false; setFollowTail(false); anchor.current = null;
+    outputRef.current.scrollTop = findRows[next] * rowHeight; setScrollTop(outputRef.current.scrollTop);
+  };
+  const highlight = (text: string) => findOpen && deferredFind ? logHighlightParts(text, deferredFind, findRegex, findCase).map((part, index) => part.match ? <mark key={index}>{part.text}</mark> : part.text) : text;
   visibleEntriesRef.current = visibleEntries;
   const firstRow = Math.min(Math.max(0, visibleEntries.length - 1), Math.max(0, Math.floor(scrollTop / rowHeight) - 8));
   const lastRow = Math.min(visibleEntries.length, Math.ceil((scrollTop + viewportHeight) / rowHeight) + 8);
@@ -175,19 +251,27 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     catch { setError(copy("复制失败，请选中文字后复制", "Copy failed. Select the text and copy it.")); }
   };
 
-  return <section className={styles.logViewer} aria-label={copy("设备日志", "Device logs")}>
+  return <section ref={rootRef} tabIndex={0} className={styles.logViewer} aria-label={copy("设备日志", "Device logs")}>
+    <div className={styles.logApplication}>
+      <label>{copy("应用 / 包名", "Application / bundle")}<select aria-label={copy("按应用包名过滤", "Filter by application bundle")} value={bundle} onChange={event => { setBundle(event.target.value); setPid(""); }}>
+        <option value="">{copy("全部应用和系统进程", "All apps and system processes")}</option>
+        {applications.map(app => { const pids = [...logApplicationPids(processes, app.bundleName, app.process)]; return <option key={app.bundleName} value={app.bundleName}>{app.label ? app.label + " · " : ""}{app.bundleName}{pids.length ? ` [${pids.join(",")}]` : ""}</option>; })}
+      </select></label>
+      {bundle ? <span title={copy("通过当前 PID 与日志明确的进程字段筛选；不搜索消息正文", "Current PID map and explicit log process field; not message text")}>PID {applicationPids.size ? [...applicationPids].join(", ") : copy("暂无运行进程", "not running")}</span> : null}
+    </div>
     <div className={styles.logToolbar}>
       <input list={processListId} value={pid} onChange={(event) => setPid(event.target.value)} placeholder={copy("进程名称 / PID", "Process name / PID")} aria-label={copy("搜索进程", "Search processes")} style={{ width: 150, minWidth: 80, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 5, padding: 5 }} />
       <datalist id={processListId}>{processes.map((process) => <option key={process.pid} value={process.pid}>{process.name} ({process.pid})</option>)}</datalist>
-      <select value={level} onChange={(event) => setLevel(event.target.value)} aria-label={copy("日志级别", "Log level")}>
+      <select value={level} onChange={(event) => setLevel(event.target.value)} aria-label={copy("最低日志级别", "Minimum log level")}>
         <option value="">{copy("所有级别", "All levels")}</option>
-        <option value="debug">Debug</option><option value="info">Info</option><option value="warn">Warn</option><option value="error">Error</option><option value="fatal">Fatal</option>
+        <option value="debug">Debug+</option><option value="info">Info+</option><option value="warn">Warn+</option><option value="error">Error+</option><option value="fatal">Fatal</option>
       </select>
       <label className={styles.logSearch}>
         <AliIcon name="search" size={13} />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy("筛选日志", "Filter logs")} aria-label={copy("筛选日志", "Filter logs")} />
       </label>
       <button className={styles.iconButton} type="button" onClick={() => setRegex(!regex)} aria-pressed={regex} title={copy("正则表达式", "Regular expression")}>.*</button>
+      <button className={styles.iconButton} type="button" onClick={() => setCaseSensitive(!caseSensitive)} aria-pressed={caseSensitive} title={copy("筛选区分大小写", "Case-sensitive filters")}>Aa</button>
       <button className={styles.iconButton} type="button" onClick={() => { if (paused) { captureAnchor(); setEntries(buffered.current); } pausedRef.current = !paused; setPaused(!paused); }} aria-pressed={paused} aria-label={paused ? copy("继续显示日志", "Resume log display") : copy("暂停显示日志", "Pause log display")} title={paused ? copy("继续", "Resume") : copy("暂停", "Pause")}>
         <AliIcon name={paused ? "play" : "pause"} size={13} />
       </button>
@@ -195,13 +279,18 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
         <AliIcon name="reload" size={13} />
       </button>
     </div>
-    <div className={styles.logFilters}>
+    <details className={styles.logAdvanced}><summary>{copy("更多筛选 · TAG / TID / Domain / 时间", "More filters · TAG / TID / Domain / time")}{tag || tid || domain || fromTime || toTime ? copy("（已启用）", " (active)") : ""}</summary><div className={styles.logFilters}>
       <input value={tag} onChange={event => setTag(event.target.value)} aria-label={copy("日志 TAG", "Log TAG")} placeholder="TAG" />
+      <label><input type="checkbox" checked={tagRegex} onChange={event => setTagRegex(event.target.checked)} />{copy("TAG 正则", "TAG regex")}</label>
+      <input value={tid} onChange={event => setTid(event.target.value)} aria-label="TID" placeholder="TID" inputMode="numeric" />
+      <input value={domain} onChange={event => setDomain(event.target.value)} aria-label="Domain" placeholder="Domain" />
       <input value={fromTime} onChange={event => setFromTime(event.target.value)} aria-label={copy("日志开始时间", "Log start time")} placeholder={copy("开始 HH:mm:ss", "From HH:mm:ss")} />
       <input value={toTime} onChange={event => setToTime(event.target.value)} aria-label={copy("日志结束时间", "Log end time")} placeholder={copy("结束 HH:mm:ss", "To HH:mm:ss")} />
       <small>{copy("设备时钟；可填 MM-DD HH:mm:ss，起止格式一致。", "Device clock; optional MM-DD prefix, same format for both limits.")}</small>
-    </div>
+    </div></details>
     <div className={styles.logActions}>
+      {!findOpen ? <button type="button" onClick={() => setFindOpen(true)}>{copy("查找 · Ctrl+F", "Find · Ctrl+F")}</button> : null}
+      <details className={styles.logMore}><summary>{copy("导出 / 复制", "Export / copy")}</summary><div>
       <button type="button" disabled={!entries.length} onClick={() => exportLogs(false)}>{copy("导出保留日志", "Export retained logs")}</button>
       <button type="button" disabled={!visibleEntries.length} onClick={() => exportLogs(true)}>{copy("导出筛选结果", "Export filtered logs")}</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => {
@@ -210,33 +299,48 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
         else if (selected) void copyText(selected.raw);
         else setNotice(copy("请先选中日志文字或打开一行详情", "Select log text or open a line first"));
       }}>{copy("复制选中日志", "Copy selected logs")}</button>
+      </div></details>
       <button type="button" onClick={() => { buffered.current = []; setEntries([]); setSelected(undefined); setDropped(0); setEvicted(0); setNotice(undefined); anchor.current = null; }}>{copy("清空当前视图", "Clear current view")}</button>
+      <button type="button" onClick={() => { setBundle(""); setPid(""); setLevel(""); setQuery(""); setRegex(false); setCaseSensitive(false); setTag(""); setTagRegex(false); setTid(""); setDomain(""); setFromTime(""); setToTime(""); }}>{copy("重置筛选", "Reset filters")}</button>
     </div>
+    {findOpen ? <div className={styles.logFind}>
+      <input ref={findRef} value={findText} onChange={event => setFindText(event.target.value)} aria-label={copy("查找保留的筛选结果", "Find in retained filtered logs")} placeholder={copy("查找 · Ctrl+F（不改变筛选）", "Find · Ctrl+F (without filtering)")} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); jumpFind(event.shiftKey ? -1 : 1); } if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setFindOpen(false); } }} />
+      <button type="button" aria-pressed={findCase} onClick={() => setFindCase(!findCase)} title={copy("查找区分大小写", "Case-sensitive find")}>Aa</button>
+      <button type="button" aria-pressed={findRegex} onClick={() => setFindRegex(!findRegex)} title={copy("查找正则", "Find regex")}>.*</button>
+      <span>{findIndex >= 0 ? Math.min(findIndex + 1, findRows.length) : 0}/{findRows.length} {copy("行", "rows")}</span>
+      <button type="button" disabled={!findRows.length} onClick={() => jumpFind(-1)} aria-label={copy("上一个匹配", "Previous match")}>↑</button><button type="button" disabled={!findRows.length} onClick={() => jumpFind(1)} aria-label={copy("下一个匹配", "Next match")}>↓</button>
+      <button type="button" onClick={() => setFindOpen(false)} aria-label={copy("关闭查找", "Close find")}>×</button>
+      <small>{copy("当前保留的筛选结果", "Retained filtered rows")}{deferredFind !== findText ? ` · ${copy("查找中…", "Searching…")}` : ""}</small>
+    </div> : null}
     <div className={styles.logMeta}>
-      <span>{selectedProcess ? `${selectedProcess.name} · PID ${selectedProcess.pid}` : copy("所有进程", "All processes")}</span>
-      <span>{visibleEntries.length} / {entries.length} {copy("行（保留最近 10000 行）", "lines (latest 10000 retained)")}{loading ? ` · ${copy("连接中", "connecting")}` : ""}{paused ? ` · ${copy("已暂停显示，继续采集", "display paused; still collecting")}` : ""}{!online ? ` · ${copy("已断开，保留已采集日志", "disconnected; collected logs retained")}` : ""}{dropped ? ` · ${copy("未接收", "Dropped")} ${dropped}` : ""}{evicted ? ` · ${copy("超出保留上限", "Evicted")} ${evicted}` : ""}</span>
+      <span>{bundle || (selectedProcess ? `${selectedProcess.name} · PID ${selectedProcess.pid}` : copy("所有进程", "All processes"))}{processUpdatedAt ? ` · PID ${processUpdatedAt}` : ""}</span>
+      <span>{visibleEntries.length} / {entries.length} {copy("行（最近 10000 行 / 8 MiB 文本上限）", "lines (10000 rows / 8 MiB text limit)")}{loading ? ` · ${copy("连接中", "connecting")}` : ""}{paused ? ` · ${copy("已暂停显示，继续采集", "display paused; still collecting")}` : ""}{!online ? ` · ${copy("已断开，保留已采集日志", "disconnected; collected logs retained")}` : ""}{dropped ? ` · ${copy("未接收", "Dropped")} ${dropped}` : ""}{evicted ? ` · ${copy("超出保留上限", "Evicted")} ${evicted}` : ""}</span>
       {(!followTail || paused) && <button onClick={() => { following.current = true; setFollowTail(true); pausedRef.current = false; setPaused(false); setEntries(buffered.current); if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }}>{copy("跟随最新日志", "Follow latest")}</button>}
     </div>
-    <div ref={outputRef} className={styles.logOutput} role="log" aria-live="off" onScroll={(event) => { const output = event.currentTarget; setScrollTop(output.scrollTop); const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < rowHeight; following.current = atBottom; setFollowTail(atBottom); }}>
+    <div ref={columnsRef} className={styles.logColumns}><div className={styles.logLine}><span>{copy("时间", "Time")}</span><span>L</span><span>PID:TID</span><span>Domain / TAG</span><span>{copy("消息 · 点击查看完整行", "Message · click for details")}</span></div></div>
+    <div ref={outputRef} className={styles.logOutput} role="log" aria-live="off" onScroll={(event) => { const output = event.currentTarget; if (columnsRef.current) columnsRef.current.scrollLeft = output.scrollLeft; setScrollTop(output.scrollTop); const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < rowHeight; following.current = atBottom; setFollowTail(atBottom); }}>
       <div ref={measureRef} className={styles.logRowMeasure} aria-hidden="true" />
       {visibleEntries.length ? <div style={{ height: visibleEntries.length * rowHeight, position: "relative" }}>
         <div style={{ position: "absolute", top: firstRow * rowHeight, left: 0, right: 0 }}>
         {visibleEntries.slice(firstRow, lastRow).map((entry) => <div className={styles.logLine} style={{ height: rowHeight }} data-log-id={entry.id} data-level={entry.level} key={entry.id}
           role="button" tabIndex={0} aria-label={copy("查看日志详情", "View log details")} onClick={() => setSelected(entry)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(entry); } }}>
-        <span className={styles.logTime}>{entry.timestamp ?? ""}</span>
+        <span className={styles.logTime} title={entry.timestamp}>{highlight(entry.timestamp ?? "")}</span>
         <span className={styles.logLevel}>{entry.level === "unknown" ? "·" : entry.level.slice(0, 1).toUpperCase()}</span>
-        <span className={styles.logPid}>{entry.pid ?? ""}</span>
-        <span className={styles.logTag}>{entry.tag ?? entry.domain ?? ""}</span>
-        <span className={styles.logMessage}>{entry.message}</span>
+        <span className={styles.logPid} title={`PID ${entry.pid ?? ""} / TID ${entry.tid ?? ""}`}>{highlight(`${entry.pid ?? ""}:${entry.tid ?? ""}`)}</span>
+        <span className={styles.logTag} title={`${entry.domain ?? ""}/${entry.tag ?? ""}`}>{highlight(`${entry.domain ? entry.domain + "/" : ""}${entry.tag ?? ""}`)}</span>
+        <span className={styles.logMessage}>{highlight(entry.message)}</span>
       </div>)}</div></div> : <div className={styles.logEmpty}>{online ? copy("没有匹配的日志", "No matching logs") : copy("请先连接设备", "Connect a device first")}</div>}
     </div>
     {selected ? <div className={styles.logDetails} aria-label={copy("日志详情", "Log details")}>
       <div><strong>{copy("日志详情", "Log details")}</strong><button type="button" onClick={() => void copyText(selected.raw)}>{copy("复制完整行", "Copy complete line")}</button><button type="button" onClick={() => setSelected(undefined)}>{copy("关闭详情", "Close details")}</button></div>
-      <pre>{selected.raw}</pre>
+      <pre>{highlight(selected.raw)}</pre>
     </div> : null}
     {notice ? <div role="status" className={styles.inlineHint}>{notice}</div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
+    {appError ? <div className={styles.error} role="alert">{copy("应用 / 进程信息：", "App / process information: ")}{appError}</div> : null}
     {matcher.error && <div className={styles.error} role="alert">{copy("正则表达式无效：", "Invalid regular expression: ")}{matcher.error}</div>}
+    {tagMatcher.error && <div className={styles.error} role="alert">TAG: {tagMatcher.error}</div>}
+    {findOpen && findMatcher.error && <div className={styles.error} role="alert">{copy("查找正则无效：", "Invalid find regex: ")}{findMatcher.error}</div>}
     {timeRange.error && <div className={styles.error} role="alert">{copy("时间格式无效：填写 HH:mm[:ss] 或 MM-DD HH:mm[:ss]，起止格式一致。", "Invalid time: use HH:mm[:ss] or MM-DD HH:mm[:ss], with matching limit formats.")}</div>}
   </section>;
 }

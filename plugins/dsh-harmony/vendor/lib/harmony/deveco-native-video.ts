@@ -28,8 +28,8 @@ export interface NativeVideoOptions {
  ownershipDirectory?: string;
  healthIntervalMs?: number;
  processAlive?: (pid:number)=>boolean;
- prepareAutomation?: ()=>Promise<boolean|void>;
- captureInitialFrame?: ()=>Promise<{data:Uint8Array;width:number;height:number}>;
+ prepareAutomation?: (signal?:AbortSignal)=>Promise<boolean|void>;
+ captureInitialFrame?: (signal?:AbortSignal)=>Promise<{data:Uint8Array;width:number;height:number}>;
  initialFrameIntervalMs?:number;
 }
 async function loopbackPort(): Promise<number> {
@@ -122,7 +122,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   if(existing.split('\n').some(l=>/uitest/.test(l)&&/libscreen_casting|libscrcpy|libdsh_video_/.test(l))) throw new HarmonyError('DEVICE_BUSY','Stop the other live video projection before opening this stream');
   // Establish the reusable UI agent before the encoder; never initialize it
   // over an active stream, because UiDriver.connect may restart uitest.
-  const automationReady=await options.prepareAutomation?.();if(automationReady!==undefined)stats.automationReady=automationReady;
+  const automationReady=await options.prepareAutomation?.(signal);if(automationReady!==undefined)stats.automationReady=automationReady;
   localPort=await loopbackPort();
   await saveOwner();
   filesTouched=true;
@@ -226,7 +226,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
    if(closed||encodedReady||!options.captureInitialFrame)return;
    try{
     if((controller!.desiredSize??0)>0){
-     const frame=await options.captureInitialFrame();
+     const frame=await options.captureInitialFrame(signal);
      if(closed||encodedReady)return;
      if(!Number.isInteger(frame.width)||!Number.isInteger(frame.height)||frame.width<1||frame.height<1||frame.width>16384||frame.height>16384||!frame.data.length||frame.data.length>8*1024*1024)throw new HarmonyError('INVALID_RESPONSE','Invalid initial preview frame');
      const config=Buffer.alloc(22);config.writeUInt32BE(2,0);config.writeUInt32BE(14,4);config[8]=2;config.writeUInt32BE(frame.width,9);config.writeUInt32BE(frame.height,13);config.writeUInt32BE(1,17);config[21]=2; // explicit initial-preview flag

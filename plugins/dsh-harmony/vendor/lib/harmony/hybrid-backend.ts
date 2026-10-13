@@ -108,9 +108,9 @@ export class HybridHarmonyBackend implements HarmonyAutomationBackend {
   }
 
   async openVideoStream(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection> {
-    return await this.hdc.openVideoStream(serial, signal,async()=>{
-      try{if(await this.hypium.waitForIdle(serial,100,2000,signal))return true;}
-      catch(error){if(signal?.aborted)throw error;}
+    return await this.hdc.openVideoStream(serial, signal,async(sourceSignal)=>{
+      try{if(await this.hypium.waitForIdle(serial,100,2000,sourceSignal))return true;}
+      catch(error){if(sourceSignal?.aborted)throw error;}
       // UI automation is optional for viewing. Retire a failed worker before
       // starting video so its late initialization cannot restart the encoder.
       await this.hypium.reset(serial);return false;

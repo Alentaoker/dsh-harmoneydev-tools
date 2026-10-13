@@ -1216,6 +1216,7 @@ export class HarmonyDeviceManager {
     const tracked: HarmonyVideoConnection = {
       changeDriven:connection.changeDriven,
       isLive:current,
+      finished:connection.finished,
       stream: connection.stream.pipeThrough(videoMetadataTransform((width, height) => {
         if (!current()) return;
         if (dimensions?.width !== width || dimensions?.height !== height) this.videoConnectionFrames.delete(tracked);
@@ -1255,6 +1256,7 @@ export class HarmonyDeviceManager {
     };
     this.videoConnectionCurrent.set(tracked, current);
     const set = this.videoConnections.get(options.serial) ?? new Set<HarmonyVideoConnection>(); set.add(tracked); this.videoConnections.set(options.serial, set);
+    void connection.finished?.then(() => tracked.close()).catch(() => {});
     return tracked;
   }
 

@@ -27,7 +27,8 @@ function configuration(payload: Buffer) {
   const sl = payload.readUInt16BE(13), pp = 15 + sl;
   if (pp + 2 > payload.length) throw new HarmonyError("INVALID_RESPONSE", "Truncated recording SPS");
   const pl = payload.readUInt16BE(pp);
-  if (pp + 2 + pl !== payload.length) throw new HarmonyError("INVALID_RESPONSE", "Truncated recording PPS");
+  const end = pp + 2 + pl;
+  if (end !== payload.length && !(end + 1 === payload.length && payload[end] === 1)) throw new HarmonyError("INVALID_RESPONSE", "Truncated recording PPS");
   const sps = units(payload.subarray(15, pp))[0], pps = units(payload.subarray(pp + 2))[0];
   if (sps.length < 4 || pps.length < 1 || (sps[0] & 31) !== 7 || (pps[0] & 31) !== 8) throw new HarmonyError("INVALID_RESPONSE", "Invalid AVC parameter sets");
   const description = Buffer.alloc(11 + sps.length + pps.length);
@@ -53,6 +54,7 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
   try { output.addVideoTrack(source); await output.start(); reader = connection.stream.getReader(); }
   catch (error) { await output.cancel().catch(() => undefined); await handle.close(); await rm(path, { force: true }); await rmdir(directory); await connection.close(); throw error; }
   let stopping = false, failure: unknown, frames = 0, firstTimestamp: number | undefined, config: ReturnType<typeof configuration> | undefined;
+  let recordingClock: number | undefined, lastRelative = -0.000001;
   let accepted = false, ended = false, failureReported = false;
   const reportFailure = () => {
     if (!accepted || !ended || stopping || !failure || failureReported || !onFailure) return;
@@ -94,6 +96,9 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
           if (pending.length < length + 8) break;
           const payload = pending.subarray(8, length + 8); pending = pending.subarray(length + 8);
           if (type === 2) {
+            // Native startup can briefly supply an explicitly marked JPEG
+            // preview. Wait for H.264 under the existing startup deadline.
+            if (!config && payload.length === 14 && payload[0] === 2 && payload[13] === 2) continue;
             const next = configuration(payload);
             if (config && (next.width !== config.width || next.height !== config.height || !next.description.equals(config.description))) throw new HarmonyError("STALE_SNAPSHOT", "Video geometry or codec changed; stop and start a new recording");
             config = next;
@@ -102,8 +107,14 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
             if (!frames && !key) continue;
             if (!Number.isSafeInteger(timestamp) || frames >= 14400) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording timestamp or frame limit exceeded");
             firstTimestamp ??= timestamp;
-            const relative = (timestamp - firstTimestamp) / 1_000_000;
-            if (relative < 0 || relative > 120) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording reached its two-minute limit");
+            recordingClock ??= performance.now();
+            const sourceRelative = (timestamp - firstTimestamp) / 1_000_000;
+            const elapsed = (performance.now() - recordingClock) / 1000;
+            if (sourceRelative < 0 || elapsed > 120) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording reached its timestamp or two-minute limit");
+            // A static shared source can replay an old IDR/GOP. It is decoder
+            // preroll, not minutes recorded before this subscription began.
+            const relative = Math.max(lastRelative + 0.000001, Math.min(sourceRelative, elapsed));
+            lastRelative = relative;
             await source.add(new EncodedPacket(lengthPrefixed(payload.subarray(9)), key ? "key" : "delta", relative, 1 / config.fps), frames ? undefined : { decoderConfig: { codec: config.codec, codedWidth: config.width, codedHeight: config.height, description: config.description } });
             frames++; resolveReady();
           }

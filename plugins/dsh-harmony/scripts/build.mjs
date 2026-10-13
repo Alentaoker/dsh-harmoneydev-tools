@@ -5,7 +5,6 @@ import { build } from 'esbuild';
 import { verifyNativeVideoResource } from './verify-native-video-resource.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const vendor = path.join(root, 'vendor');
-const upstream = path.resolve(root, '..', 'Piora-source-review');
 const src = name => path.join(root, 'src', name);
 // rc.2 replaces preset configs as a whole; reproduce the installed preset declarations.
 let patch = '- insert:\n    - id: dshHarmony-host\n      name: dsh-harmony\n\n';
@@ -18,9 +17,8 @@ for (const preset of ['standard', 'ptc', 'minimal', 'cordis']) {
   patch += '\n      - id: dshHarmony\n        name: dsh-harmony/agent\n\n';
 }
 fs.writeFileSync(path.join(root, 'cordis.patch.yml'), patch);
-// A checkout builds from its vendored API sources. Maintainers may refresh
-// from the pinned upstream checkout before building.
-if (fs.existsSync(path.join(upstream, 'app/api/harmony'))) fs.cpSync(path.join(upstream, 'app/api/harmony'), path.join(vendor, 'app/api/harmony'), { recursive: true });
+// Builds always use the checked-in vendor tree. Refreshing upstream is a
+// separate explicit maintenance operation; nearby checkouts cannot alter builds.
 const shared = path.join(vendor, 'app/api/harmony/_shared.ts');
 let sharedCode = fs.readFileSync(shared, 'utf8');
 sharedCode = sharedCode.replace(/^import \{ admittedByHarness \} from .*;\r?\n/m, '');

@@ -2,7 +2,7 @@
 
 import { brandText } from "@/lib/branding";
 
-import { Component, useCallback, useEffect, useId, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useId, useMemo, useRef, useState, type ErrorInfo, type ReactNode, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
@@ -190,11 +190,12 @@ type HarmonyPanelProps = {
   onOpenLocalTerminal?: () => void;
   onGuideAgent?: ((prompt?: string) => void) | undefined;
   onSnapshot?: (fingerprint: number) => void;
+  pluginVersion?: string;
 };
 
 type FrameZoom = "fit" | "100" | "150" | "200";
 
-export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenLocalTerminal, onGuideAgent, onSnapshot }: HarmonyPanelProps) {
+export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenLocalTerminal, onGuideAgent, onSnapshot, pluginVersion }: HarmonyPanelProps) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -221,6 +222,15 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
   const [databaseSelection, setDatabaseSelection] = useState("");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsVisited, setToolsVisited] = useState(false);
+  const [logLayout, setLogLayout] = useState<"side" | "bottom" | "focus">(() => {
+    try { const value = localStorage.getItem("dshHarmony.logLayout"); return value === "bottom" || value === "focus" ? value : "side"; } catch { return "side"; }
+  });
+  const [logRatio, setLogRatio] = useState(() => {
+    try { const value = Number(localStorage.getItem("dshHarmony.logRatio")); return value >= 32 && value <= 85 ? value : 70; } catch { return 70; }
+  });
+  const workspaceRef = useRef<HTMLElement>(null);
+  const resizingLog = useRef<number>();
+  useEffect(() => { try { localStorage.setItem("dshHarmony.logLayout", logLayout); localStorage.setItem("dshHarmony.logRatio", String(logRatio)); } catch {} }, [logLayout, logRatio]);
   const drawerId = useId();
   const toolsButtonRef = useRef<HTMLButtonElement>(null);
   const drawerBodyRef = useRef<HTMLDivElement>(null);
@@ -674,7 +684,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     ? copy("连接方式根据 IP:端口标识推断，HDC 未直接标注。", "Transport inferred from IP:port; not reported directly by HDC.")
     : selected?.transportEvidence === "hdc" ? copy("连接方式由 HDC 标注。", "Transport reported by HDC.") : copy("HDC 未给出可核验的连接方式。", "HDC did not provide a verifiable transport.");
 
-  return <div ref={panelRef} className={styles.root} data-maximized={maximized}>
+  return <div ref={panelRef} className={styles.root} data-maximized={maximized} data-harmony-panel="true">
     <header className={styles.deviceHeader}>
       <div className={styles.deviceIdentity}>
         <span className={styles.deviceMark}><AliIcon name="mobile" size={15} /></span>
@@ -786,7 +796,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
     </section> : null}
 
-    <main className={styles.workspace}>
+    <main ref={workspaceRef} className={styles.workspace} data-tool-layout={toolTab === "logs" ? logLayout : undefined} data-tools-open={toolsOpen} style={{ "--tools-size": `${logRatio}%` } as CSSProperties}>
       <div className={styles.screenPane}>
         {controlStatus ? <div className={styles.activityBar} role="status">
           <span>{controlStatus === "stopping" ? copy("正在停止设备操作，请稍候…", "Stopping device operations…") : copy("设备清理尚未确认，暂不能操作或开始录屏", "Device cleanup is unconfirmed. Input and new recordings are paused.")}</span>
@@ -879,8 +889,14 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
 
 
       </div>
+      {toolsOpen && toolTab === "logs" && logLayout !== "focus" ? <div className={styles.logDivider} role="separator" tabIndex={0} aria-label={copy("调整设备与日志比例", "Resize phone and logs")} aria-orientation={logLayout === "side" ? "vertical" : "horizontal"} aria-valuemin={32} aria-valuemax={85} aria-valuenow={logRatio}
+        onPointerDown={event => { if (event.button !== 0) return; resizingLog.current = event.pointerId; event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); }}
+        onPointerMove={event => { if (resizingLog.current !== event.pointerId) return; const bounds = workspaceRef.current?.getBoundingClientRect(); if (!bounds) return; const ratio = logLayout === "side" ? 100 * (bounds.right - event.clientX) / bounds.width : 100 * (bounds.bottom - event.clientY) / bounds.height; setLogRatio(Math.round(Math.max(32, Math.min(85, ratio)))); }}
+        onPointerUp={() => { resizingLog.current = undefined; }} onPointerCancel={() => { resizingLog.current = undefined; }}
+        onKeyDown={event => { const delta = ["ArrowLeft", "ArrowUp"].includes(event.key) ? 3 : ["ArrowRight", "ArrowDown"].includes(event.key) ? -3 : 0; if (delta) { event.preventDefault(); setLogRatio(value => Math.max(32, Math.min(85, value + delta))); } }} /> : null}
       <section id={drawerId} className={styles.toolDrawer} data-tab={toolTab} hidden={!toolsOpen} aria-label={copy("设备工具", "Device tools")} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); closeTools(); } }}>
-        <div className={styles.drawerHeading}><strong>{copy("工具", "Tools")}</strong><div className={styles.drawerHeadingActions}>
+        <div className={styles.drawerHeading}><strong>{toolTab === "logs" ? copy("实时日志", "Live logs") : copy("工具", "Tools")}{pluginVersion ? <small className={styles.pluginVersion}> · {pluginVersion}</small> : null}</strong><div className={styles.drawerHeadingActions}>
+          {toolTab === "logs" ? <><select aria-label={copy("日志布局", "Log layout")} value={logLayout} onChange={event => setLogLayout(event.target.value as typeof logLayout)}><option value="side">{copy("左右布局", "Side by side")}</option><option value="bottom">{copy("上下布局", "Stacked")}</option><option value="focus">{copy("专注日志", "Logs only")}</option></select><button type="button" onClick={() => { setLogLayout(logLayout === "focus" ? "side" : "focus"); }} aria-label={logLayout === "focus" ? copy("显示设备画面", "Show phone") : copy("收起设备画面", "Hide phone")}>{logLayout === "focus" ? copy("显示设备", "Show phone") : copy("专注日志", "Focus logs")}</button></> : null}
           {onMaximizedChange ? <button type="button" onClick={() => onMaximizedChange(!maximized)} aria-label={maximized ? copy("返回双栏", "Return to split view") : copy("展开设备工作台", "Expand device workbench")} title={maximized ? copy("返回双栏", "Return to split view") : copy("展开设备工作台", "Expand device workbench")}><AliIcon name={maximized ? "fullscreen-exit" : "fullscreen"} size={14} />{maximized ? copy("还原", "Restore") : copy("展开", "Expand")}</button> : null}
           <button className={styles.iconButton} type="button" onClick={closeTools} aria-label={copy("关闭工具", "Close tools")}><AliIcon name="close" size={15} /></button>
         </div></div>

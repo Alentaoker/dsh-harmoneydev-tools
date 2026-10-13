@@ -2,18 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-async function harness() {
+async function harness(viewer = false) {
   const state=[],effects=[],queue=[],requests=[],timers=new Map();let cursor=0,timerId=0,Panel,exports;
   const jsx=(type,props)=>({type,props});
-  const react={useState(initial){const i=cursor++;if(!(i in state))state[i]=initial;return[state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value;}];},useEffect(fn,deps){const i=cursor++,previous=effects[i];if(!previous||deps.some((v,j)=>!Object.is(v,previous.deps[j])))queue.push(()=>{previous?.cleanup?.();effects[i]={deps,cleanup:fn()};});}};
-  const context={window:{__ModuleLoader__:{load:module=>{exports=module.factory(name=>name==='react'?react:{jsx,jsxs:jsx});}}},document:{getElementById:()=>({}),head:{appendChild(){}}},AbortController,URLSearchParams,Date,Number,String,JSON,URL,
+  const react={useRef(initial){const i=cursor++;if(!(i in state))state[i]={current:initial};return state[i];},useMemo(fn){cursor++;return fn();},useState(initial){const i=cursor++;if(!(i in state))state[i]=initial;return[state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value;}];},useEffect(fn,deps){const i=cursor++,previous=effects[i];if(!previous||deps.some((v,j)=>!Object.is(v,previous.deps[j])))queue.push(()=>{previous?.cleanup?.();effects[i]={deps,cleanup:fn()};});}};
+  const context={window:{__ModuleLoader__:{load:module=>{exports=module.factory(name=>name==='react'?react:{jsx,jsxs:jsx});}}},document:{getElementById:()=>({}),head:{appendChild(){}},addEventListener(){},removeEventListener(){}},AbortController,URLSearchParams,Date,Number,String,JSON,URL,
     setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
     fetch(url,options={}){return new Promise(resolve=>requests.push({url,signal:options.signal,resolve}));},
   };
-  runInNewContext(await readFile(new URL('../lib/client.js',import.meta.url),'utf8'),context);
-  const ctx={effect:fn=>fn(),sidebarRightTabs:{register(){}},slots:{inject:(_name,fn)=>fn(),register:(slot,component)=>{if(slot.name==='sidebar.right.pane.tab')Panel=component;}},sessions:{scope:id=>({id})},conversation:{input:{for:()=>({setDraft(){}})}}};exports.apply(ctx);
-  const render=(sessionId,visible)=>{cursor=0;const tree=Panel({sessionId,useTabInfo:()=>({tab:{visible}})});while(queue.length)queue.shift()();return tree;};
+  if(viewer){
+    const result=await build({entryPoints:[fileURLToPath(new URL('../src/LogViewer.jsx',import.meta.url))],bundle:true,format:'cjs',platform:'browser',jsx:'automatic',external:['react','react/jsx-runtime'],write:false});
+    const module={exports:{}};runInNewContext(result.outputFiles[0].text,{...context,module,exports:module.exports,require:name=>name==='react'?react:{jsx,jsxs:jsx}});Panel=module.exports.LogViewer;
+  }else runInNewContext(await readFile(new URL('../lib/client.js',import.meta.url),'utf8'),context);
+  const ctx={effect:fn=>fn(),sidebarRightTabs:{register(){}},slots:{inject:(_name,fn)=>fn(),register:(slot,component)=>{if(slot.name==='sidebar.right.pane.tab')Panel=component;}},sessions:{scope:id=>({id})},conversation:{input:{for:()=>({setDraft(){}})}}};if(!viewer)exports.apply(ctx);
+  const render=(sessionId,visible)=>{cursor=0;const tree=Panel(viewer?{url:"/logs?id=test",visible}:{sessionId,useTabInfo:()=>({tab:{visible}})});while(queue.length)queue.shift()();return tree;};
   const reply=(request,value)=>request.resolve(new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}}));
   const text=tree=>{if(tree==null||typeof tree==='boolean')return '';if(typeof tree!=='object')return String(tree);if(Array.isArray(tree))return tree.map(text).join(' ');return text(tree.props?.children);};
   return{render,reply,requests,timers,text,dispose(){for(const e of effects)e?.cleanup?.();}};
@@ -38,11 +43,9 @@ test('切会话取消旧读取；旧响应不能覆盖新会话记录',async()=>
   }finally{h.dispose();}
 });
 test('日志页被正文大小缩短后，上一页回到真实起点，不固定减去 100',async()=>{
-  const h=await harness();const find=(tree,label)=>{if(!tree||typeof tree!=='object')return;if(Array.isArray(tree)){for(const child of tree){const result=find(child,label);if(result)return result;}return;}if(tree.type==='button'&&h.text(tree).includes(label))return tree;return find(tree.props?.children,label);};
+  const h=await harness(true);const find=(tree,label)=>{if(!tree||typeof tree!=='object')return;if(Array.isArray(tree)){for(const child of tree){const result=find(child,label);if(result)return result;}return;}if(tree.type==='button'&&h.text(tree).includes(label))return tree;return find(tree.props?.children,label);};
   try{
-    h.render('one',true);for(const r of h.requests)h.reply(r,r.url.includes('/status')?{active:[],devices:[]}:{runs:[{id:'log-run',name:'日志报告',status:'failed'}],counts:{all:1},filteredTotal:1,nextOffset:null});await tick();
-    find(h.render('one',true),'日志报告').props.onClick();h.render('one',true);h.reply(h.requests.at(-1),{run:{id:'log-run',name:'日志报告',status:'failed',sessionId:'one'},view:{args:{},totals:{modelCalls:0,actions:0},cache:[],logCollection:{status:'captured'},steps:[],files:[],screenshots:[]},related:[]});await tick();
-    find(h.render('one',true),'应用日志').props.onClick();h.render('one',true);h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:0,entries:[],nextOffset:69});await tick();
+    h.render('one',true);h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:0,entries:[],nextOffset:69});await tick();
     find(h.render('one',true),'下一页').props.onClick();h.render('one',true);assert.ok(h.requests.at(-1).url.includes('offset=69'));h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:69,entries:[],nextOffset:140});await tick();
     find(h.render('one',true),'下一页').props.onClick();h.render('one',true);assert.ok(h.requests.at(-1).url.includes('offset=140'));h.reply(h.requests.at(-1),{total:210,filteredTotal:210,offset:140,entries:[],nextOffset:200});await tick();
     find(h.render('one',true),'上一页').props.onClick();h.render('one',true);assert.ok(h.requests.at(-1).url.includes('offset=69'));

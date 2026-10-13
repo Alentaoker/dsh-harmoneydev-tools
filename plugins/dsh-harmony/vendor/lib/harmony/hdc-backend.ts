@@ -25,7 +25,7 @@ import { MAX_DEVICE_TRANSFER_BYTES, deviceTransferTimeoutMs } from "./device-tra
 import { assertUnredirectedPath } from "./runtime/path-safety";
 import { validateTcpDeviceAddress } from "./tcp-device";
 import { openHosScrcpyVideo } from "./hos-scrcpy";
-import { openNativeDevEcoVideo, nativeDevEcoVideoStreaming } from "./deveco-native-video";
+import { openSharedNativeDevEcoVideo, sharedNativeVideoStreaming } from "./shared-native-video";
 import { embeddedNativeVideoResource } from "./native-video-resource";
 import type {
   BackendDevice,
@@ -262,7 +262,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
   private readonly nativeVideoEnabled: boolean;
 
   interruptedForwards(serial: string) { return this.forwardStore?.interrupted(serial) ?? []; }
-  nativeVideoStreaming(serial:string) { return nativeDevEcoVideoStreaming(serial); }
+  nativeVideoStreaming(serial:string) { return sharedNativeVideoStreaming(serial); }
   async nativeVideoPresent(serial:string, signal?:AbortSignal) {
     if(this.nativeVideoStreaming(serial))return true;
     const reply=await this.shell(serial,['ps','-ef'],'native_video_runtime_guard',signal,3000);
@@ -1094,7 +1094,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
     throw new HarmonyError("CAPABILITY_UNAVAILABLE", "旧 HAP 投屏通道已废弃，请直接连接插件原生视频。", {details:{reason:"mirror-hap-retired",dispatchState:"not-sent"}});
   }
 
-  async openVideoStream(serial: string, signal?: AbortSignal, prepareAutomation?:()=>Promise<void>): Promise<HarmonyVideoConnection> {
+  async openVideoStream(serial: string, signal?: AbortSignal, prepareAutomation?:(signal?:AbortSignal)=>Promise<boolean|void>): Promise<HarmonyVideoConnection> {
     let nativeError: unknown;
     if (this.videoPreference?.provider === "hos-scrcpy" && this.videoPreference.packageDirectory && Date.now() >= this.hosRetryAt) {
       try {
@@ -1114,9 +1114,9 @@ export class HdcBackend implements HarmonyAutomationBackend {
         // A retry aborts PNG polling, but its last capture may still be ending.
         await this.screenshotTails.get(serial);
         await this.requireUnlockedScreen(serial, signal);
-        const connection = await openNativeDevEcoVideo({ serial, signal, prepareAutomation, quality: this.videoPreference?.quality,
-          captureInitialFrame:async()=>{
-            const image=await this.captureScreen(serial,signal);const sharp=(await import('sharp')).default;
+        const connection = await openSharedNativeDevEcoVideo({ serial, signal, prepareAutomation, quality: this.videoPreference?.quality,
+          captureInitialFrame:async(sourceSignal)=>{
+            const image=await this.captureScreen(serial,sourceSignal);const sharp=(await import('sharp')).default;
             const {data,info}=await sharp(image.data).resize({width:Math.max(1,Math.round((image.width||1272)/2))}).jpeg({quality:80}).toBuffer({resolveWithObject:true});
             return {data,width:info.width,height:info.height};
           },
@@ -1127,7 +1127,8 @@ export class HdcBackend implements HarmonyAutomationBackend {
           },
         });
         this.videoClosers.add(connection.close);
-        return { stream: connection.stream,changeDriven:connection.changeDriven,isLive:connection.isLive, close: async () => {
+        void connection.finished?.then(() => this.videoClosers.delete(connection.close));
+        return { stream: connection.stream,changeDriven:connection.changeDriven,isLive:connection.isLive,finished:connection.finished, close: async () => {
           try { await connection.close(); } finally { this.videoClosers.delete(connection.close); }
         } };
       } catch (error) {

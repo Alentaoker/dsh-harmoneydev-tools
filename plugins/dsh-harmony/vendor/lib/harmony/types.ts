@@ -187,6 +187,8 @@ export interface HarmonyVideoConnection {
   /** Static screens can stay valid while a change-driven transport is live. */
   changeDriven?:boolean;
   isLive?:()=>boolean;
+  /** Settles on unsubscribe/disconnect so callers can retire viewer bookkeeping. */
+  finished?:Promise<void>;
 }
 
 export interface HarmonyDiagnostics {

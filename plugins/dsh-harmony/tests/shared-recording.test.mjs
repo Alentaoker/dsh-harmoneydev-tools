@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+const output=new URL('./.shared-recording-test.mjs',import.meta.url);
+await build({stdin:{contents:"export {openSharedVideo} from './vendor/lib/harmony/shared-video';export {startOwnedRecording} from './vendor/lib/harmony/media/owned-recording';export {HosVideoPacketizer} from './vendor/lib/harmony/media/hos-packets';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',platform:'node',packages:'external',outfile:fileURLToPath(output)});
+const {openSharedVideo,startOwnedRecording,HosVideoPacketizer}=await import(output.href);
+test.after(()=>rm(output,{force:true}));
+test('recording shares the preview source, waits past startup JPEG and accepts change-driven AVC configuration',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'dsh-shared-recording-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const annex=(...units)=>Buffer.concat(units.flatMap(unit=>[Buffer.from([0,0,0,1]),unit]));
+ const key=annex(Buffer.from('6742c01fda014016ec0440000003004000000c83c60c658','hex'),Buffer.from('68ce3c80','hex'),Buffer.from([0x65,1,2]));
+ const packetizer=new HosVideoPacketizer(24,true),packets=packetizer.push(key);
+ const oldTimestamp=BigInt(Date.now()-180000)*1000n;
+ packets.find(packet=>packet.readUInt32BE()===3).writeBigUInt64BE(oldTimestamp,9);
+ let controller,starts=0,closes=0;
+ const options={serial:'record-share-test',directory,openSource:async()=>{starts++;return {changeDriven:true,stream:new ReadableStream({start(c){controller=c;}}),close:async()=>{closes++;controller.close();}};}};
+ const preview=await openSharedVideo(options),previewReader=preview.stream.getReader();
+ t.after(()=>preview.close());
+ const drain=(async()=>{while(!(await previewReader.read()).done){}})();
+ const subscribed=await openSharedVideo(options),pending=startOwnedRecording(subscribed);
+ const jpeg=Buffer.alloc(22);jpeg.writeUInt32BE(2);jpeg.writeUInt32BE(14,4);jpeg[8]=2;jpeg.writeUInt32BE(100,9);jpeg.writeUInt32BE(200,13);jpeg.writeUInt32BE(1,17);jpeg[21]=2;
+ const image=Buffer.alloc(20);image.writeUInt32BE(3);image.writeUInt32BE(12,4);image[8]=1;
+ controller.enqueue(jpeg);controller.enqueue(image);await new Promise(resolve=>setTimeout(resolve,20));
+ for(const packet of packets)controller.enqueue(packet);
+ const recording=await pending;
+ t.after(()=>recording.discard());
+ // New live pictures follow an IDR captured three minutes before joining.
+ for(const packet of packetizer.push(annex(Buffer.from([0x41,1,2]))))controller.enqueue(packet);
+ await new Promise(resolve=>setTimeout(resolve,20));
+ const destination=join(directory,'owned.mp4');const bytes=await recording.stop(destination);
+ const movie=await readFile(destination);assert.equal(bytes,movie.length);assert.ok(movie.includes(Buffer.from('ftyp')));assert.ok(movie.includes(Buffer.from('moov')));
+ assert.equal(preview.isLive(),true);assert.equal(starts,1);assert.equal(closes,0);
+ await preview.close();await drain;assert.equal(closes,1);
+});
