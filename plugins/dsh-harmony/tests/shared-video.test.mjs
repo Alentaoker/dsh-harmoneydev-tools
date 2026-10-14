@@ -4,13 +4,15 @@ import { build } from 'esbuild';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createConnection } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 
 const modulePath = resolve('tests/.shared-video-test.mjs');
 await build({entryPoints:['vendor/lib/harmony/shared-video.ts'], bundle:true, format:'esm', platform:'node', packages:'external', outfile:modulePath});
 const {openSharedVideo, sharedVideoStreaming} = await import('./.shared-video-test.mjs');
+const errorBuild=await build({entryPoints:['vendor/lib/harmony/errors.ts'],bundle:true,format:'esm',platform:'node',write:false});
+const {HarmonyError}=await import('data:text/javascript;base64,'+Buffer.from(errorBuild.outputFiles[0].contents).toString('base64'));
 after(() => rm(modulePath, {force:true}));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function bounded(promise, ms = 4000) {
@@ -124,4 +126,26 @@ test('unauthenticated loopback connections cannot attach to or stop a shared sou
   const socket=createConnection(record.port,'127.0.0.1');const closed=new Promise(resolve=>socket.once('close',resolve));
   socket.on('error',()=>{});socket.on('data',()=>{});socket.on('connect',()=>socket.write(JSON.stringify({token:'wrong',op:'close'})+'\n'));
   await bounded(closed);assert.equal(a.isLive(),true);assert.equal(f.closes,0);await a.close();
+});
+
+test('source rejection retains contention metadata for every subscriber and permits recovery',async t=>{
+ const f=await fixture(t);const original=f.options.openSource;
+ f.options.openSource=async()=>{await pause(20);throw new HarmonyError('DEVICE_BUSY','DevEco projection busy',
+  {retryable:true,details:{reason:'native-video-conflict',source:'deveco',devicePid:51811,token:'never-relay',privatePath:'never-relay'}});};
+ const rejected=await Promise.allSettled([f.open(),f.open()]);
+ for(const result of rejected){assert.equal(result.status,'rejected');const e=result.reason;
+  assert.equal(e.code,'DEVICE_BUSY');assert.equal(e.retryable,true);
+  assert.deepEqual(e.details,{reason:'native-video-conflict',source:'deveco',devicePid:51811});
+ }
+ await pause(40);f.options.openSource=original;const c=await bounded(f.open());assert.equal(f.starts,1);await c.close();
+});
+
+test('a refused cross-process listener waits for normal record retirement instead of spawning a second source',async t=>{
+ const f=await fixture(t),server=createServer();
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;
+ await new Promise(resolve=>server.close(resolve));
+ const path=join(f.options.directory,createHash('sha256').update(f.options.serial).digest('hex')+'.broker.json');
+ await writeFile(path,JSON.stringify({version:1,pid:process.pid,nonce:randomUUID(),port,token:'a'.repeat(64)}));
+ const opening=f.open();await pause(140);assert.equal(f.starts,0);
+ await rm(path);const c=await bounded(opening);assert.equal(f.starts,1);await c.close();
 });

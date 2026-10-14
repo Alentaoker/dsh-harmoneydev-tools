@@ -8,6 +8,7 @@ import { HarmonyError } from './errors';
 import { HosVideoPacketizer } from './media/hos-packets';
 import type { HarmonyVideoConnection } from './types';
 import { acquireDeviceLock, sharedDeviceLockDirectory } from './runtime/device-lock';
+import { nativeVideoConflicts, nativeVideoConflictError } from './native-video-conflict';
 
 const ENDPOINT='localabstract:scrcpy_grpc_socket';
 const active=new Set<string>();
@@ -119,7 +120,8 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   await saveOwner();
   stats.resourceName=resource.resourceName;stats.resourceSha256=resource.hash;
   const existing=await command(['shell','ps -ef'],'native_video_existing',signal);
-  if(existing.split('\n').some(l=>/uitest/.test(l)&&/libscreen_casting|libscrcpy|libdsh_video_/.test(l))) throw new HarmonyError('DEVICE_BUSY','Stop the other live video projection before opening this stream');
+  const conflicts=nativeVideoConflicts(existing);
+  if(conflicts.length) throw nativeVideoConflictError(conflicts);
   // Establish the reusable UI agent before the encoder; never initialize it
   // over an active stream, because UiDriver.connect may restart uitest.
   const automationReady=await options.prepareAutomation?.(signal);if(automationReady!==undefined)stats.automationReady=automationReady;

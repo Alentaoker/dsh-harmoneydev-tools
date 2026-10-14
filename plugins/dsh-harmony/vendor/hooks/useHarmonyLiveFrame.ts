@@ -62,8 +62,12 @@ type StreamAttempt = {
 };
 
 async function responseError(response: Response, chinese: boolean): Promise<string> {
+  return (await responseFailure(response)).messageFor(chinese);
+}
+
+async function responseFailure(response: Response): Promise<HarmonyRequestError> {
   const payload = await response.json().catch(() => ({})) as { error?: unknown };
-  return new HarmonyRequestError(payload.error, response.status).messageFor(chinese);
+  return new HarmonyRequestError(payload.error, response.status);
 }
 
 function startCodedUnit(unit: Uint8Array): Uint8Array {
@@ -179,6 +183,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<HarmonyLiveFrame | null>(null);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
+  const [videoBlocked, setVideoBlocked] = useState(false);
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   useEffect(() => {
@@ -198,6 +203,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       setMode("idle");
       setError(null);
       setFallbackReason(null);
+      setVideoBlocked(false);
       return;
     }
     if (options.paused || document.hidden) {
@@ -252,6 +258,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     setMode("video");
     setError(null);
     setFallbackReason(null);
+    setVideoBlocked(false);
     const initialCanvas = options.canvasRef.current;
     if (initialCanvas) contextFor(initialCanvas)?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
 
@@ -299,6 +306,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       setStatus("live");
       setError(null);
       setFallbackReason(config?.initialPreview?(options.chinese?'视频通道已连接，先显示当前预览；画面变化后切入实时视频。':'Video connected; showing initial preview until the screen changes.'):null);
+      setVideoBlocked(false);
     };
 
     const drawVideoFrame = (videoFrame: VideoFrame, attempt: StreamAttempt) => {
@@ -448,7 +456,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       }
     };
 
-    const pollFrames = async (durationMs=Infinity) => {
+    const pollFrames = async (durationMs=Infinity, intervalMs=120) => {
       const until=performance.now()+durationMs;
       let fallbackGeometry: { width: number; height: number; geometryId: string } | undefined;
       let fallbackGeometryCheckedAt = 0;
@@ -514,7 +522,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           } finally {
             bitmap.close();
           }
-          await delay(120, lifecycle.signal);
+          await delay(intervalMs, lifecycle.signal);
         } catch (frameError) {
           if (lifecycle.signal.aborted || disposed) return;
           fallbackFailures += 1;
@@ -560,7 +568,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             await response.body?.cancel().catch(() => undefined);
             throw attempt.failure ?? new Error("Harmony video connection was cancelled");
           }
-          if (!response.ok) throw new Error(await responseError(response, Boolean(options.chinese)));
+          if (!response.ok) throw await responseFailure(response);
           if (!response.body) throw new Error("Harmony video response has no stream body");
           // Establishing the connection and decoding its first frame each have
           // a bounded budget. Configuration packets cannot renew the latter;
@@ -575,20 +583,26 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           failures += 1;
           setStatus("error");
           setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
-          const reason = attempt.failure?.message ?? (streamError instanceof Error ? streamError.message : options.fallbackError);
+          const failure = attempt.failure ?? streamError;
+          const blocked = failure instanceof HarmonyRequestError && failure.videoBlocked;
+          const reason = failure instanceof HarmonyRequestError ? failure.messageFor(Boolean(options.chinese))
+            : failure instanceof Error ? failure.message : options.fallbackError;
           setError(reason);
           setFallbackReason(reason);
+          setVideoBlocked(blocked);
           closeDecoder();
           config = undefined;
           firstKeyframe = false;
-          if ((!hasFrame && failures >= 1) || failures >= 3) {
+          if (blocked || (!hasFrame && failures >= 1) || failures >= 3) {
             // The packaged low-latency video service is not available on every
             // device/decoder combination. Fall back to the existing bounded
             // screenshot endpoint so observation remains available while the
             // Agent holds the exclusive write lease.
             await attempt.jpegChain.catch(() => undefined);
             if (activeAttempt === attempt) activeAttempt = undefined;
-            await pollFrames(Math.min(120000,30000*2**Math.min(Math.max(0,failures-1),2)));
+            // An external encoder is a known contention state, not a decoder
+            // failure. Keep a low-rate preview and probe release every 10s.
+            await pollFrames(blocked ? 10_000 : Math.min(120000,30000*2**Math.min(Math.max(0,failures-1),2)), blocked ? 1500 : 120);
             if(lifecycle.signal.aborted||disposed)return;
             setMode('video');
             continue;
@@ -617,5 +631,5 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     };
   }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey, visibilityEpoch]);
 
-  return { frame, status, mode, error, fallbackReason, refresh };
+  return { frame, status, mode, error, fallbackReason, videoBlocked, refresh };
 }

@@ -6,8 +6,8 @@ import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {EventEmitter} from 'node:events';
-const output=await build({entryPoints:['vendor/lib/harmony/deveco-native-video.ts'],bundle:true,format:'esm',platform:'node',packages:'external',outfile:'tests/.native-video-test.mjs'});
-const {openNativeDevEcoVideo,ownedNativeVideoPid}=await import('./.native-video-test.mjs');
+const output=await build({stdin:{contents:"export * from './vendor/lib/harmony/deveco-native-video'; export * from './vendor/lib/harmony/native-video-conflict';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',platform:'node',packages:'external',outfile:'tests/.native-video-test.mjs'});
+const {openNativeDevEcoVideo,ownedNativeVideoPid,nativeVideoConflicts}=await import('./.native-video-test.mjs');
 await rm('tests/.native-video-test.mjs');
 async function fixture(t){
  const dir=await mkdtemp(join(tmpdir(),'dsh-native-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
@@ -62,8 +62,24 @@ test('the stream becomes ready only with an IDR and pauses at its byte budget',a
 });
 test('an existing DevEco video daemon is left alone before any device file is sent',async t=>{
  const f=await fixture(t),commands=[];
- await assert.rejects(openNativeDevEcoVideo({...f,serial:'test-busy',command:async a=>{commands.push(a);return 'shell 1111 1 0 ? ? ? uitest --extension-name libscreen_casting.z.so';}}),/other live video/);
+ await assert.rejects(openNativeDevEcoVideo({...f,serial:'test-busy',command:async a=>{commands.push(a);return 'shell 1111 1 0 ? ? ? uitest --extension-name libscreen_casting.z.so';}}),error=>{
+  assert.equal(error.code,'DEVICE_BUSY');assert.equal(error.retryable,true);
+  assert.equal(error.details.reason,'native-video-conflict');assert.equal(error.details.source,'deveco');
+  assert.equal(error.details.devicePid,1111);assert.match(error.message,/DevEco.*1111/);return true;
+ });
  assert.equal(commands.some(a=>a[0]==='file'||a.join(' ').includes('kill -9')),false);
+});
+
+test('video contention detection distinguishes actual daemons from shell and grep command text',()=>{
+ const output=`shell 1000 1 0 00:00:00 ? 00:00:00 sh -c uitest start-daemon --extension-name libscreen_casting.z.so
+shell 1001 1 0 00:00:00 ? 00:00:00 grep uitest libscreen_casting.z.so
+shell 1002 1 0 00:00:00 ? 00:00:00 uitest start-daemon --extension-name libuitest.z.so
+shell 1003 1 0 00:00:00 ? 00:00:00 /system/bin/uitest start-daemon --extension-name /data/local/tmp/libdsh_video_abc.so
+shell 1004 1 0 00:00:00 ? 00:00:00 uitest start-daemon --extension-name libscreen_casting.z.so`;
+ assert.deepEqual(nativeVideoConflicts(output),[
+  {devicePid:1003,extension:'libdsh_video_abc.so',source:'dsh-untracked'},
+  {devicePid:1004,extension:'libscreen_casting.z.so',source:'deveco'}
+ ]);
 });
 
 test('cleanup follows a forked child and asks the encoder to stop before cancelling',async t=>{

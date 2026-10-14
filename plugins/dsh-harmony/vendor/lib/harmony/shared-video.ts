@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection, createServer, type Socket } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
-import { HarmonyError } from './errors';
+import { HarmonyError, isHarmonyError } from './errors';
 import type { HarmonyVideoConnection } from './types';
 import { acquireDeviceLock, sharedDeviceLockDirectory } from './runtime/device-lock';
 
@@ -26,6 +26,25 @@ export interface SharedVideoOptions {
 interface Record { version: 1; pid: number; nonce: string; port: number; token: string }
 interface Peer { socket: Socket; acknowledged: boolean; waitingKey: boolean }
 interface Broker { record: Record; closing: boolean; stopped: Promise<void>; stop(): Promise<void> }
+
+// Relay only actionable video metadata. Ownership tokens, paths and arbitrary
+// transport details must never reach another subscriber or the browser.
+function failureResponse(error: unknown) {
+  const details: { [key: string]: string | number } = {};
+  if (isHarmonyError(error)) {
+    for (const key of ['reason', 'source', 'recovery']) {
+      const value = error.details?.[key];
+      if (typeof value === 'string' && value.length <= 80) details[key] = value;
+    }
+    for (const key of ['ownerPid', 'devicePid']) {
+      const value = error.details?.[key];
+      if (Number.isSafeInteger(value) && (value as number) > 0) details[key] = value as number;
+    }
+  }
+  return { ok: false, code: isHarmonyError(error) ? error.code : 'CAPABILITY_UNAVAILABLE',
+    message: error instanceof Error ? error.message.slice(0, 512) : 'Shared native video failed',
+    retryable: isHarmonyError(error) && error.retryable, details };
+}
 
 function alive(pid: number) {
   try { process.kill(pid, 0); return true; }
@@ -64,6 +83,7 @@ async function createBroker(options: SharedVideoOptions, directory: string, key:
   let source: Promise<HarmonyVideoConnection> | undefined;
   let connection: HarmonyVideoConnection | undefined;
   let ready = false;
+  let sourceFailure: ReturnType<typeof failureResponse> | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let stopPromise: Promise<void> | undefined;
   let config: Buffer | undefined;
@@ -97,6 +117,11 @@ async function createBroker(options: SharedVideoOptions, directory: string, key:
       let message: { token?: string; op?: string };
       try { message = JSON.parse(line); } catch { socket.destroy(); return; }
       if (!peer) {
+        if (sourceFailure) { socket.end(JSON.stringify(sourceFailure) + '\n'); return; }
+        if (broker.closing && message?.token === broker.record.token) {
+          socket.end(JSON.stringify(failureResponse(new HarmonyError('DEVICE_BUSY', '共享视频连接正在释放，将自动重连。',
+            { retryable: true, details: { reason: 'shared-video-retiring' } }))) + '\n'); return;
+        }
         if (broker.closing || message?.token !== broker.record.token || peers.size >= (options.maxViewers ?? 16)) {
           socket.end(JSON.stringify({ ok: false, code: 'DEVICE_BUSY', message: 'Video subscription unavailable' }) + '\n');
           return;
@@ -221,10 +246,15 @@ async function createBroker(options: SharedVideoOptions, directory: string, key:
       }
     } catch (error) {
       if (!broker.closing) {
-        for (const peer of peers) if (!peer.acknowledged) {
-          peer.socket.write(JSON.stringify({ ok: false, code: (error as any)?.code ?? 'CAPABILITY_UNAVAILABLE',
-            message: error instanceof Error ? error.message.slice(0, 512) : 'Shared native video failed' }) + '\n');
-        }
+        sourceFailure = failureResponse(error);
+        // Flush the structured rejection before stop destroys the sockets.
+        // Otherwise clients see an unexplained disconnect rather than its cause.
+        await Promise.all([...peers].filter(peer => !peer.acknowledged).map(peer => new Promise<void>(done => {
+          const timer = setTimeout(() => { peer.socket.destroy(); done(); }, 500);
+          const finish = () => { clearTimeout(timer); done(); };
+          peer.socket.once('close', finish);
+          peer.socket.end(JSON.stringify(sourceFailure) + '\n', finish);
+        })));
         await broker.stop();
       }
     } finally { reader?.releaseLock(); }
@@ -281,7 +311,25 @@ async function locateBroker(options: SharedVideoOptions): Promise<Record> {
 
 export async function openSharedVideo(options: SharedVideoOptions): Promise<HarmonyVideoConnection> {
   if (!/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(options.serial)) throw new HarmonyError('INVALID_ARGUMENT', 'Invalid device serial');
-  const record = await locateBroker(options);
+  const deadline = Date.now() + 2500;
+  for (;;) {
+    const record = await locateBroker(options);
+    try { return await connectBroker(options, record); }
+    catch (error) {
+      if (options.signal?.aborted) throw aborted();
+      const retiring = isHarmonyError(error) && error.details?.reason === 'shared-video-retiring';
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (!retiring && !['ECONNREFUSED', 'ECONNRESET', 'EPIPE'].includes(code ?? '')) throw error;
+      if (Date.now() >= deadline) throw new HarmonyError('DEVICE_BUSY', `共享投屏服务暂时不可连接（本机进程 ${record.pid}）。请在该服务退出投屏后重试。`,
+        { retryable: true, details: { reason: 'shared-video-unreachable', ownerPid: record.pid } });
+      // A live record can briefly outlast its closing listener. Never delete it
+      // or start another encoder until normal ownership retirement completes.
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+}
+
+async function connectBroker(options: SharedVideoOptions, record: Record): Promise<HarmonyVideoConnection> {
   if (options.signal?.aborted) throw aborted();
   return new Promise((accept, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port: record.port });
@@ -343,10 +391,11 @@ export async function openSharedVideo(options: SharedVideoOptions): Promise<Harm
       const newline = bytes.indexOf(10);
       if (header.length + (newline < 0 ? bytes.length : newline) > 2048) { fail(new Error('Invalid video broker response')); return; }
       if (newline < 0) { header = Buffer.concat([header, bytes]); return; }
-      let response: { ok: boolean; changeDriven?: boolean; code?: any; message?: string };
+      let response: { ok: boolean; changeDriven?: boolean; code?: any; message?: string; retryable?: boolean; details?: { [key: string]: unknown } };
       try { response = JSON.parse(Buffer.concat([header, bytes.subarray(0, newline)]).toString('utf8')); }
       catch { fail(new Error('Invalid video broker response')); return; }
-      if (response?.ok !== true) { fail(new HarmonyError(response?.code ?? 'CAPABILITY_UNAVAILABLE', response?.message ?? 'Video subscription rejected')); return; }
+      if (response?.ok !== true) { fail(new HarmonyError(response?.code ?? 'CAPABILITY_UNAVAILABLE', response?.message ?? 'Video subscription rejected',
+        { retryable: response?.retryable === true, details: response?.details })); return; }
       header = Buffer.alloc(0); acknowledged = true; counted = true;
       viewers.set(options.serial, (viewers.get(options.serial) ?? 0) + 1);
       clearTimeout(timer);

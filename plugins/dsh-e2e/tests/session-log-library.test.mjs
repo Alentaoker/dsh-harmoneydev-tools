@@ -74,7 +74,7 @@ test('分析草稿保留已有文字，拒绝覆盖引用或正在提交的内�
   let draft, sends = 0; const input = { state: { getSnapshot: () => ({ phase: 'plain', draft: '已有问题', occurrences: [] }) }, setDraft(text) { draft = text; }, submit() { sends++; } };
   appendLogDraft(input, '日志分析'); assert.equal(draft, '已有问题\n\n日志分析'); assert.equal(sends, 0);
   input.state.getSnapshot = () => ({ phase: 'plain', draft: '文件引用', occurrences: [{}] }); assert.throws(() => appendLogDraft(input, '覆盖'), /引用/); assert.equal(draft, '已有问题\n\n日志分析');
-  const prompt = logAnalysisPrompt({ id: 'file', name: 'test.log' }, { sourceLine: 50, raw: 'unknown' }, { query: 'error' }); assert.match(prompt, /"lineFrom":30/); assert.match(prompt, /"lineUntil":70/); assert.ok(!prompt.includes('"query":"error"')); assert.match(prompt, /只分析日志/);
+  const prompt = logAnalysisPrompt({ id: 'file', name: 'test.log' }, { sourceLine: 50, raw: 'unknown' }, { query: 'error' }); assert.match(prompt, /"lineFrom":30/); assert.match(prompt, /"lineUntil":70/); assert.ok(!prompt.includes('"query":"error"')); assert.match(prompt, /只分析日志/); assert.match(prompt, /现象 \/ Bug 描述：\n其它补充：\n/); assert.match(prompt, /未填写时不推断具体故障/);
 });
 test('浏览器分块导入失败会取消原上传，新的重试可完整写入且只绑定指定会话', () => fixture(async library => {
   const previous = globalThis.fetch; let broken = true, aborts = 0;

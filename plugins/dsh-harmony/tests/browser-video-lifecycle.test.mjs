@@ -21,10 +21,11 @@ const built = await build({
 const { useHarmonyLiveFrame } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].contents).toString('base64')}`);
 
 function harness(hidden, fetcher) {
-  const saved = Object.fromEntries(['document', 'window', 'fetch', '__harmonyHookTest', 'VideoDecoder', 'EncodedVideoChunk'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const saved = Object.fromEntries(['document', 'window', 'fetch', '__harmonyHookTest', 'VideoDecoder', 'EncodedVideoChunk', 'performance', 'createImageBitmap'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const listeners = new Map();
   const timers = new Map();
   let timerId = 0;
+  let now = 0;
   const document = { hidden, addEventListener(name, listener) { listeners.set(name, listener); }, removeEventListener(name, listener) { if (listeners.get(name) === listener) listeners.delete(name); } };
   const options = { active: true, enabled: true, serial: 'TEST-PREVIEW', generation: 1, fallbackError: 'unavailable', canvasRef: { current: null } };
   const hooks = [];
@@ -49,7 +50,7 @@ function harness(hidden, fetcher) {
       }
     },
   };
-  Object.assign(globalThis, { document, window: { setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); } }, fetch: fetcher, __harmonyHookTest: seam });
+  Object.assign(globalThis, { document, performance: { now: () => now }, window: { setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); } }, fetch: fetcher, __harmonyHookTest: seam });
   const render = () => {
     index = 0; effects = []; dirty = false;
     const value = useHarmonyLiveFrame(options);
@@ -58,6 +59,7 @@ function harness(hidden, fetcher) {
   };
   return {
     options, timers,
+    advance(ms) { now += ms; },
     flush() { let value; for (let attempts = 0; attempts < 10; attempts++) { value = render(); if (!dirty) return value; } throw Error('Hook did not settle'); },
     visibility(value) { document.hidden = value; listeners.get('visibilitychange')?.(); },
     async dispose() {
@@ -158,4 +160,30 @@ test('video uses an opaque cached canvas, five-second static geometry probes, an
     assert.equal(cancelledStreams, 1);
     assert.equal(h.flush().frame.geometryId, undefined);
   } finally { await h.dispose(); }
+});
+
+test('external video contention stays identifiable with low-rate preview and retries after release', async () => {
+  let videoRequests = 0, frameRequests = 0;
+  const h = harness(false, async (url, {signal}) => {
+    if (url.startsWith('/api/harmony/video?')) {
+      videoRequests += 1;
+      if (videoRequests === 1) return {ok:false,status:409,json:async()=>({error:{code:'DEVICE_BUSY',message:'busy',
+        details:{reason:'native-video-conflict',source:'deveco',devicePid:51811}}})};
+      return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')),{once:true}));
+    }
+    if (url.startsWith('/api/harmony/geometry?')) return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'preview'}})};
+    frameRequests += 1;
+    return {ok:true,headers:new Headers({'X-Harmony-Generation':'1','X-Harmony-Revision':'1'}),blob:async()=>new Blob()};
+  });
+  h.options.chinese = true;
+  h.options.canvasRef.current={width:100,height:200,getContext:()=>({drawImage(){},clearRect(){}})};
+  globalThis.createImageBitmap=async()=>({width:100,height:200,close(){}});
+  try {
+    h.flush();await settle();const state=h.flush();
+    assert.equal(state.videoBlocked,true);assert.equal(state.mode,'frames');assert.equal(state.status,'live');
+    assert.match(state.fallbackReason,/DevEco.*51811/);assert.equal(frameRequests,1);
+    const entry=[...h.timers].find(([,timer])=>timer.delay===1500);assert.ok(entry,'busy preview uses a 1.5s delay');
+    h.advance(11000);h.timers.delete(entry[0]);entry[1].fn();await settle();
+    assert.equal(videoRequests,2,'release is probed without a manual refresh');assert.equal(frameRequests,1);
+  } finally {await h.dispose();}
 });

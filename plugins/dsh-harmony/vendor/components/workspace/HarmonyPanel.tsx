@@ -308,6 +308,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     mode: frameMode,
     error: frameLoadError,
     fallbackReason: frameFallbackReason,
+    videoBlocked: frameVideoBlocked,
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
     active: active && desktopAvailable,
@@ -828,16 +829,16 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       >
       <div className={styles.frame} data-zoom={frameZoom}>
         {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} data-video-error={frameFallbackReason ?? undefined} aria-live="polite">
-          <span />{frameStatus === "error"
+          <span />{frameVideoBlocked ? copy("投屏通道占用 · 等待释放", "Video channel busy · waiting for release") : frameStatus === "error"
             ? frameMode === "frames" ? copy("兼容投屏重试中", "Retrying compatible view") : copy("视频流重连中", "Reconnecting stream")
             : frameStatus === "loading"
               ? frameMode === "frames" ? copy("切换兼容投屏", "Switching to compatible view") : copy("视频流连接中", "Connecting stream")
             : liveFrame?.initialPreview ? copy("实时视频准备中 · 当前预览", "Preparing live video · current preview") : frameMode === "frames" ? copy("兼容投屏 · 自动刷新", "Compatible view · auto refresh") : copy("实时视频流", "Live video")}
           {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ""}
         </div> : null}
-        {selectedOnline && frameMode === "frames" && frameStatus === "live" ? <div className={styles.frameVideoActions}>
+        {selectedOnline && frameMode === "frames" && (frameStatus === "live" || frameVideoBlocked) ? <div className={styles.frameVideoActions}>
           {!liveFrame?.initialPreview?<button className={styles.frameVideoSetup} type="button" disabled={busy}
-            onClick={connectLiveVideo}>{copy("接入实时视频", "Connect live video")}</button>:null}
+            onClick={connectLiveVideo}>{frameVideoBlocked ? copy("重试实时视频", "Retry live video") : copy("接入实时视频", "Connect live video")}</button>:null}
           {frameFallbackReason ? <small data-video-fallback-reason title={frameFallbackReason}>{frameFallbackReason}</small> : null}
         </div> : null}
         {selectedOnline ? <canvas
