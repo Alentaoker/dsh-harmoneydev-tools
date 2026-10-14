@@ -1,0 +1,54 @@
+{
+  "schema": "hdesign-sdk-symbol-catalog-v1",
+  "source": "local-harmonyos-sdk",
+  "version": "sdk-catalog-1",
+  "catalog": {
+    "path": "symbol-catalog.json",
+    "sha256": "1be88cc0ed565e2d1b3d06468e3303adbc7b96a2679bbdf2cd172e4d2702cfb0"
+  },
+  "provenance": {
+    "sdk_resource": {
+      "path": "sysResource.js",
+      "sha256": "32bd234b5cf7a1d86ce7deac85d745c6b5b86fdbe688be67239ef63e4cfe672b",
+      "member": "module.exports.sys.symbol"
+    },
+    "font": {
+      "path": "HMSymbolVF.ttf",
+      "sha256": "63a0afa17a4a51e3bdbb5752f4cee99355ba79365131fe24181d56e0237c450c",
+      "cmap": "getBestCmap",
+      "family_names": [
+        "HM Symbol"
+      ],
+      "version_strings": [
+        "Version 1.000;Glyphs 3.1.2 (3151)"
+      ],
+      "postscript_names": [
+        "HMSymbol-Regular"
+      ]
+    },
+    "sdk_metadata": {
+      "path": "oh-uni-package.json",
+      "sha256": "250b53f383be634ada496cfb4a1cbebd1e7ad6f14f44fd136ca55d2d9a35acab",
+      "fields": {
+        "version": "26.0.0.105",
+        "apiVersion": "26",
+        "platformVersion": "26.0.0",
+        "displayName": "Ets",
+        "releaseType": "Release"
+      }
+    }
+  },
+  "metadata": {
+    "sdk_version": "26.0.0.105",
+    "api_version": "26",
+    "stats": {
+      "sdk_symbol_count": 4042,
+      "catalog_entries": 4042,
+      "font_cmap_entry_count": 4698,
+      "sdk_symbols_with_codepoint": 4022,
+      "sdk_symbols_without_codepoint": 20,
+      "font_only_glyph_names_excluded": 675,
+      "font_only_cmap_entries_excluded": 676
+    }
+  }
+}

@@ -7,15 +7,15 @@
 在仓库根目录运行：
 
 ```powershell
-npm --prefix plugins/dsh-harmony ci --legacy-peer-deps
-npm --prefix plugins/dsh-harmony run build
-npm --prefix plugins/dsh-e2e ci --legacy-peer-deps
-npm --prefix plugins/dsh-e2e run build
+npm --prefix plugin/dsh-harmony ci --legacy-peer-deps
+npm --prefix plugin/dsh-harmony run build
+npm --prefix plugin/dsh-e2e ci --legacy-peer-deps
+npm --prefix plugin/dsh-e2e run build
 
 $env:DSH_HOME = 'E:\DeepSeekHarness\Data'
 $dshCliPath = 'E:\DeepSeekHarness\App\resources\runtime\cli\bin\dsh.cmd'
-& $dshCliPath plugin --profile desktop add (Resolve-Path 'plugins/dsh-harmony').Path
-& $dshCliPath plugin --profile desktop add (Resolve-Path 'plugins/dsh-e2e').Path
+& $dshCliPath plugin --profile desktop add (Resolve-Path 'plugin/dsh-harmony').Path
+& $dshCliPath plugin --profile desktop add (Resolve-Path 'plugin/dsh-e2e').Path
 node scripts/register-bundles.mjs "$env:DSH_HOME/profiles/desktop/package.json"
 ```
 
@@ -44,8 +44,8 @@ E2E 优先使用宿主随附的 Node；安装结构不同时可给启动脚本�
 
 ```powershell
 $env:DSH_HOME = 'E:\DeepSeekHarness\Data'
-& $dshCliPath plugin --profile web add (Resolve-Path 'plugins/dsh-harmony').Path
-& $dshCliPath plugin --profile web add (Resolve-Path 'plugins/dsh-e2e').Path
+& $dshCliPath plugin --profile web add (Resolve-Path 'plugin/dsh-harmony').Path
+& $dshCliPath plugin --profile web add (Resolve-Path 'plugin/dsh-e2e').Path
 node scripts/register-bundles.mjs "$env:DSH_HOME/profiles/web/package.json"
 & $dshCliPath web
 ```

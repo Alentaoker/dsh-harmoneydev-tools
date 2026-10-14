@@ -1,5 +1,12 @@
 # 变更记录
 
+## 工具集结构调整（2026-10-15）
+
+- 仓库更名为 dsh-harmoneydev-tools，两个插件迁到 plugin/，加入 skill/hdesign-to-arkts。
+- 根 README 改为导航，各工具增加使用和安装入口；skill 提供 AI 覆盖安装与新旧差异说明。
+- 安装、打包、CI 同步新目录；插件包名、版本与运行数据位置不变。
+- hdesign-to-arkts 使用目标 SDK 正式 symbol 字码索引，移除 dHash 路径；矢量/图片由用户决定素材或具体 symbol。
+
 ## dshHarmony 0.5.0-rc.1 / dshE2E 0.4.0-rc.1（2026-10-15，候选版）
 
 - 离线日志库按宿主会话 ID 隔离，HTTP 及 AI 读取均校验归属；旧共享日志需明确归入会话，复制、校验 SHA256 并保留旧副本。

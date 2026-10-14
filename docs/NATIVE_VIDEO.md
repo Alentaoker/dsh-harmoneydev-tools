@@ -9,7 +9,7 @@
 | 来源 | 所有者已安装的 `screenCastingResource.jar`，资源包版本 `26.0.0.432` |
 | SDK | `hosScrcpy-1.0.17.15-java21-SNAPSHOT-shaded.jar` |
 | 原成员 | `libscrcpy/libscrcpy_server_unix_6.6-20260418.z.so` |
-| 插件内位置 | `plugins/dsh-harmony/resources/native-video/libdsh-native-video.z.so` |
+| 插件内位置 | `plugin/dsh-harmony/resources/native-video/libdsh-native-video.z.so` |
 | 字节数 | 268,471，约 262 KiB |
 | SHA-256 | `98bbc964fef1c4d17b446ec717102b855d09224b23fc1872bf70e1f928d010dd` |
 | 格式 | ELF64、little-endian、AArch64、共享库 |
@@ -57,7 +57,7 @@ SDK 的格式是独立标记和数值。改为 `-scale 2 -frameRate 24 -bitRate 
 私有仓库已经包含组件，普通安装不需要导入。维护者核对原来源时可以运行：
 
 ```powershell
-npm --prefix plugins/dsh-harmony run import:video -- --jar '本机 screenCastingResource.jar 的绝对路径'
+npm --prefix plugin/dsh-harmony run import:video -- --jar '本机 screenCastingResource.jar 的绝对路径'
 ```
 
 未知版本或哈希不符会拒绝导入。升级组件需重新检查依赖、协议并实机验收，构建也会再次校验资源。

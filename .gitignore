@@ -1,6 +1,6 @@
 **/node_modules/
-plugins/dsh-harmony/lib/
-plugins/dsh-e2e/lib/
+plugin/dsh-harmony/lib/
+plugin/dsh-e2e/lib/
 **/.harmony-worker/
 **/artifacts/
 **/backups/
@@ -24,3 +24,6 @@ plugins/dsh-e2e/lib/
 .test-data/
 dist/
 
+
+**/__pycache__/
+**/*.pyc

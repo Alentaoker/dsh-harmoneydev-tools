@@ -1,7 +1,7 @@
 import { readFile, lstat } from 'node:fs/promises';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
-import { verifyNativeVideoResource } from '../plugins/dsh-harmony/scripts/verify-native-video-resource.mjs';
+import { verifyNativeVideoResource } from '../plugin/dsh-harmony/scripts/verify-native-video-resource.mjs';
 const root=resolve(process.argv[2] || '.');
 const profile=process.argv[3] && resolve(process.argv[3]);
 if(process.versions.node.split('.')[0]!=='24')throw Error('Node 24 is required.');
@@ -9,7 +9,7 @@ if(process.platform!=='win32')throw Error('This release is validated on Windows 
 if(process.arch!=='x64')throw Error('This release is validated on Windows x64 only; Windows ARM64 requires separate native-dependency validation.');
 const packages=[];
 for(const name of ['dsh-harmony','dsh-e2e']){
-  const directory=join(root,'plugins',name);
+  const directory=join(root,'plugin',name);
   const pkg=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));
   const lock=JSON.parse(await readFile(join(directory,'package-lock.json'),'utf8'));
   if(pkg.name!==name||lock.packages?.['']?.name!==name||lock.version!==pkg.version)throw Error(`${name}: manifest/lock identity mismatch.`);
@@ -38,5 +38,5 @@ if(manifestStat){
     if(createHash('sha256').update(await readFile(target)).digest('hex')!==file.sha256)throw Error(`Release checksum mismatch: ${file.path}`);
   }
 }
-const native=await verifyNativeVideoResource(join(root,'plugins/dsh-harmony/resources/native-video'));
+const native=await verifyNativeVideoResource(join(root,'plugin/dsh-harmony/resources/native-video'));
 console.log(JSON.stringify({preflight:'passed',node:process.versions.node,platform:process.platform,architecture:process.arch,packages,releaseChecksums:!!manifestStat,nativeVideo:native.present?'verified ARM64 phone resource':'missing: screenshot preview is available; live H.264 needs the private resource',mutates:false},null,2));

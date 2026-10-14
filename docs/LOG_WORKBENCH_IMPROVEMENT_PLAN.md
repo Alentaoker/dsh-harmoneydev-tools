@@ -56,15 +56,15 @@
 
 主要源码位置：
 
-- [E2E 日志工作台](../plugins/dsh-e2e/src/LogWorkbench.jsx)
-- [E2E 日志查看器](../plugins/dsh-e2e/src/LogViewer.jsx)
-- [E2E 日志库](../plugins/dsh-e2e/src/log-library.mjs)
-- [E2E 路由](../plugins/dsh-e2e/src/index.mjs)
-- [E2E 会话面板和草稿入口](../plugins/dsh-e2e/src/client.jsx)
-- [E2E AI 工具](../plugins/dsh-e2e/src/agent.mjs)
-- [Harmony 实时日志](../plugins/dsh-harmony/vendor/components/workspace/HarmonyLogViewer.tsx)
-- [Harmony 布局样式](../plugins/dsh-harmony/vendor/components/workspace/HarmonyPanel.module.css)
-- [Harmony 会话接入](../plugins/dsh-harmony/src/client.tsx)
+- [E2E 日志工作台](../plugin/dsh-e2e/src/LogWorkbench.jsx)
+- [E2E 日志查看器](../plugin/dsh-e2e/src/LogViewer.jsx)
+- [E2E 日志库](../plugin/dsh-e2e/src/log-library.mjs)
+- [E2E 路由](../plugin/dsh-e2e/src/index.mjs)
+- [E2E 会话面板和草稿入口](../plugin/dsh-e2e/src/client.jsx)
+- [E2E AI 工具](../plugin/dsh-e2e/src/agent.mjs)
+- [Harmony 实时日志](../plugin/dsh-harmony/vendor/components/workspace/HarmonyLogViewer.tsx)
+- [Harmony 布局样式](../plugin/dsh-harmony/vendor/components/workspace/HarmonyPanel.module.css)
+- [Harmony 会话接入](../plugin/dsh-harmony/src/client.tsx)
 
 ## 三 当前会话日志工作台
 
