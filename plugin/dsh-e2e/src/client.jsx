@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { logStatusLabels } from './log-query.mjs';
+import { pluginVersion } from './version.mjs';
 import { LogViewer } from './LogViewer.jsx';
 import { LogWorkbench } from './LogWorkbench.jsx';
 import { appendLogDraft } from './log-client.mjs';
@@ -113,7 +114,7 @@ export function apply(ctx) {
     const counts=page?.counts||{};
     if(workbench)return <div className="de2e log-workbench-shell"><div className="row spread heading"><h2>dshE2E · 会话日志</h2><button onClick={()=>setWorkbench(false)}>测试工作台</button></div><LogWorkbench visible={visible} sessionId={sessionId} openFileId={openFileId} onDraft={text=>{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话');appendLogDraft(ctx.conversation.input.for(session),text);}}/></div>;
     return <div className="de2e">
-      <div className="row spread heading"><div><h2>dshE2E</h2><div className="muted">鸿蒙测试工作台 · {status?.version||'0.4.0-rc.1'}</div></div><div className="row"><button onClick={()=>setWorkbench(true)}>日志工作台</button><button onClick={()=>setTick(t=>t+1)} aria-label="刷新测试记录">刷新</button><button className="primary" disabled={!sessionId} onClick={()=>{setForm({});setSelectedId(undefined);}}>新建测试</button></div></div>
+      <div className="row spread heading"><div><h2>dshE2E</h2><div className="muted">鸿蒙测试工作台 · {status?.version||pluginVersion}</div></div><div className="row"><button onClick={()=>setWorkbench(true)}>日志工作台</button><button onClick={()=>setTick(t=>t+1)} aria-label="刷新测试记录">刷新</button><button className="primary" disabled={!sessionId} onClick={()=>{setForm({});setSelectedId(undefined);}}>新建测试</button></div></div>
       {!sessionId?<div className="empty">打开一个会话后，可查看该会话的测试和报告。</div>:<>
       <div className="device"><strong>{status?.devices?.filter(d=>d.state==='online').map(d=>d.name||d.model).join('、')||'未发现在线设备'}</strong><div className="muted">{scope==='session'?'当前会话的测试记录':'全部会话历史 · 只读'} · 模型沿用当前会话</div></div>
       {error&&<div role="alert" className="notice error">{error}</div>}{notice&&<div role="status" className="notice">{notice}</div>}

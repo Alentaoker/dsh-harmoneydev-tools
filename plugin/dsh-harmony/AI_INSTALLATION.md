@@ -6,4 +6,4 @@
 
 配套步骤共用一份 [AI 安装、升级与恢复指南](../../docs/AI_INSTALLATION.md)，以免两份安装流程发生漂移。插件包名仍为 `dsh-harmony`，不能用仓库名代替。若安装来源仍是旧仓库目录，不移动已被运行宿主引用的目录；先准备新来源，再重新登记。
 
-[安装指南](INSTALLATION.md) · [返回介绍](README.md)
+[安装指南](INSTALLATION.md) · [AI 升级与回退](../../docs/AI_UPGRADE.md) · [返回介绍](README.md)

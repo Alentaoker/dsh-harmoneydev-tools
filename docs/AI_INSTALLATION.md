@@ -4,6 +4,8 @@
 
 结合 [dsh-plugin-upgrade-skill / plugin-upgrade](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill/blob/main/skills/plugin-upgrade/SKILL.md) 的身份检查、精确版本、备份、配置增量迁移、冷启动、行为验收和恢复要求。Skill 是 Agent 指南，不是运行时依赖。遇到其它宿主版本应停止自动迁移，不替换宿主、不写兼容豁免、不使用裸 `latest`。
 
+已有安装的版本迁移和回退按 [AI 升级指南](AI_UPGRADE.md) 执行；全新安装继续按本文顺序执行。
+
 ## 支持边界
 
 当前源码候选版本是 **dshHarmony 0.5.0-rc.2 + dshE2E 0.4.0-rc.2**，保持宿主 **0.2.0-rc.2**。日志桌面验收仍有遗留；视频占用修复的实测与待验范围见 [验证记录](VALIDATION.md)。稳定版本为 0.4.3/0.3.1。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件需成对升级。

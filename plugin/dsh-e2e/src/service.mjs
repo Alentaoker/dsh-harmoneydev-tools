@@ -6,6 +6,7 @@ import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
 import { createLogLibrary } from './log-library.mjs';
+import { pluginVersion } from './version.mjs';
 import { archivedLogPage, DEFAULT_LOG_BYTES } from './log-archive.mjs';
 import { resolveLogTarget, startLogCollection, logPage, logDigest } from './logs.mjs';
 import { createRecordStore, assertScope, paginate, activeStatuses } from './records.mjs';
@@ -223,7 +224,7 @@ export function createService(ctx, root = dataRoot) {
       const apps = await m.applications(device.serial, query, undefined, signal);
       return { query, total: apps.length, offset, candidates: apps.slice(offset, offset + limit).map(({ bundleName, label, process }) => ({ bundleName, label, process })), nextOffset: offset + limit < apps.length ? offset + limit : null, resolved: apps.length === 1 ? apps[0].bundleName : null, instruction: '本次仅查询，未创建 E2E run。接下来请用 run+goal+expectation。应用内页面名称可能没有独立包名；核实宿主后传 logAppBundle，仅采日志不重启。只验当前页用 runMode:verify_current，不补发消息。' };
     },
-    status: async scope => ({ plugin: 'dshE2E', version: '0.4.0-rc.1', routing: 'e2e-default', e2eRunCreated: false, e2eVersion: '0.19.0', storage: root, harmonyReady: !!ctx.dshHarmony.automation, devices: (await manager().listDevices()).map(({ serial, name, model, state }) => ({ serial, name, model, state })), busy: jobs.size > 0, active: [...jobs.values()].filter(j => !scope || scope.all || j.sessionId === scope.sessionId).map(j=>({...summary(j),status:j.status==='queued'?'queued':'running'})) }),
+    status: async scope => ({ plugin: 'dshE2E', version: pluginVersion, routing: 'e2e-default', e2eRunCreated: false, e2eVersion: '0.19.0', storage: root, harmonyReady: !!ctx.dshHarmony.automation, devices: (await manager().listDevices()).map(({ serial, name, model, state }) => ({ serial, name, model, state })), busy: jobs.size > 0, active: [...jobs.values()].filter(j => !scope || scope.all || j.sessionId === scope.sessionId).map(j=>({...summary(j),status:j.status==='queued'?'queued':'running'})) }),
     async cancel(id, scope) { const job = await get(id, scope); if (!job.controller) throw new Error('此任务已结束'); job.controller.abort(new Error('用户取消')); await job.promise; return summary(job); },
     async replay(id, sessionId, model, signal) { const job = await get(id, { sessionId }); if (job.controller) throw new Error('请先等待原任务结束'); if (job.status !== 'passed') throw new Error('仅通过的流程可以复用；未通过的任务请调整复测'); return run(job.args, sessionId, model, signal, { parentRunId: id, relation: 'replay' }); },
     async retry(id, changes, sessionId, model, signal) { const job = await get(id, { sessionId }); if (job.controller) throw new Error('请先结束原任务'); const allowed = ['goal', 'expectation', 'name', 'appBundle', 'appAbility', 'logAppBundle', 'appName', 'collectLogs', 'logMaxBytes', 'serial', 'steps', 'timeoutMs', 'maxActions', 'maxModelCalls', 'runMode', 'verificationMode']; const patch = Object.fromEntries(allowed.filter(k => changes[k] !== undefined).map(k => [k, changes[k]])); const next = { ...job.args, ...patch }; if (changes.clearSteps === true) delete next.steps; return run(next, sessionId, model, signal, { parentRunId: id, relation: 'retry' }); },
