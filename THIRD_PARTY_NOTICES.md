@@ -7,3 +7,5 @@
 - **DevEco Testing 原生投屏扩展**：从仓库所有者的已安装资源中一次性导入 `libscrcpy_server_unix_6.6-20260418.z.so`，原字节不修改。仅保存在本人的私有仓库和本机插件中，用于个人安装，不赋予对外再分发许可，也不受本项目 MIT 许可覆盖。版本、哈希与资源来源见 `resources/native-video/manifest.json` 和 `docs/NATIVE_VIDEO.md`。依赖库的开源 notice 不能代替这份组件的许可。
 - 其他 npm 依赖的版本、来源和完整依赖树由各插件的 `package-lock.json` 记录，其许可由各包保留。
 
+
+- **HarmonyOS SDK symbol 索引**：`skill/hdesign-to-arkts/resources/` 中的 JSON 派生自 SDK 正式资源成员与 SDK 字体 cmap；版本和输入哈希见 `symbol-source.json`。不包含 SDK 字体二进制或社区图库。SDK 原有权利不因本仓库源码许可改变，索引限本私有仓库配套使用。

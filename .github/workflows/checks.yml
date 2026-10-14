@@ -18,13 +18,13 @@ jobs:
       - name: Profile registration tests
         run: node --test scripts/*.test.mjs
       - name: Harmony dependencies
-        run: npm --prefix plugins/dsh-harmony ci --legacy-peer-deps
+        run: npm --prefix plugin/dsh-harmony ci --legacy-peer-deps
       - name: Harmony build and tests
         run: |
-          npm --prefix plugins/dsh-harmony run build
+          npm --prefix plugin/dsh-harmony run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm --prefix plugins/dsh-harmony test
+          npm --prefix plugin/dsh-harmony test
       - name: E2E dependencies
-        run: npm --prefix plugins/dsh-e2e ci --legacy-peer-deps
+        run: npm --prefix plugin/dsh-e2e ci --legacy-peer-deps
       - name: E2E build and tests
-        run: npm --prefix plugins/dsh-e2e test
+        run: npm --prefix plugin/dsh-e2e test

@@ -5,7 +5,7 @@ $installRepoRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $installEnvironment=Resolve-InstallEnvironment -DshCli $DshCli -DshExe $DshExe -DataHome $DataHome -NodeExe $NodeExe -NpmCli $NpmCli -DshProfile $DshProfile
 & $installEnvironment.NodeExe (Join-Path $PSScriptRoot 'preflight.mjs') $installRepoRoot $installEnvironment.ProfilePath
 if ($LASTEXITCODE -ne 0) { throw 'Package/profile preflight failed. No installation has been performed.' }
-$installPackagePaths=@((Join-Path $installRepoRoot 'plugins\dsh-harmony'),(Join-Path $installRepoRoot 'plugins\dsh-e2e'))
+$installPackagePaths=@((Join-Path $installRepoRoot 'plugin\dsh-harmony'),(Join-Path $installRepoRoot 'plugin\dsh-e2e'))
 if ($PlanOnly) { $installEnvironment | Add-Member NoteProperty Packages $installPackagePaths; $installEnvironment | Add-Member NoteProperty Mutates $false; $installEnvironment | ConvertTo-Json -Depth 4; return }
 $installPreviousPath=$env:PATH
 $installPreviousDataHome=$env:DSH_HOME

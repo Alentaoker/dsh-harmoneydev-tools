@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm,stat,utimes} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -26,9 +26,14 @@ test('a plugin-local resource works while DevEco installation points to a nonexi
   const result=await embeddedNativeVideoResource(f.dir);assert.equal(result.file,join(f.dir,f.manifest.fileName));assert.equal(result.hash,f.manifest.sha256);
   assert.equal((await embeddedNativeVideoResource(f.dir)).file,result.file);
 });
-test('a changed binary invalidates the validation cache and rejects tampering',async t=>{
+test('a changed binary with updated metadata invalidates the cache and rejects tampering',async t=>{
   const f=await fixture(t);await embeddedNativeVideoResource(f.dir);
-  f.bytes[40]=1;await writeFile(join(f.dir,f.manifest.fileName),f.bytes);
+  const file=join(f.dir,f.manifest.fileName),before=await stat(file);
+  f.bytes[40]=1;await writeFile(file,f.bytes);
+  // Windows may give immediate same-size writes identical timestamps. Exercise
+  // metadata-based cache invalidation without depending on filesystem clock ticks.
+  await utimes(file,before.atime,new Date(before.mtimeMs+2000));
+  assert.notEqual((await stat(file)).mtimeMs,before.mtimeMs);
   await assert.rejects(embeddedNativeVideoResource(f.dir),/integrity/);
 });
 test('wrong architecture, escaping names, and missing binaries fail before use',async t=>{

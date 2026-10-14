@@ -6,7 +6,7 @@
 
 ## 支持边界
 
-当前源码候选版本是 **dshHarmony 0.5.0-rc.2 + dshE2E 0.4.0-rc.1**，保持宿主 **0.2.0-rc.2**。日志桌面验收仍有遗留；视频占用修复的实测与待验范围见 [验证记录](VALIDATION.md)。稳定版本为 0.4.3/0.3.1。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件需成对升级。
+当前源码候选版本是 **dshHarmony 0.5.0-rc.2 + dshE2E 0.4.0-rc.2**，保持宿主 **0.2.0-rc.2**。日志桌面验收仍有遗留；视频占用修复的实测与待验范围见 [验证记录](VALIDATION.md)。稳定版本为 0.4.3/0.3.1。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件需成对升级。
 
 | 项目 | 要求 |
 |---|---|
@@ -141,4 +141,4 @@ DevEco 等外部投屏需在其软件关闭设备投屏后释放；DSH 会约 10
 
 ## 本次调用路径验收
 
-参考仓库 README 的“操作入口与验收范围”。必须观察到 e2e_phone.run、独立断言、报告写入、日志状态和控制释放；仅看到 status/resolve_app 或面板不能说明测试已经执行。只验当前页明确使用 runMode:verify_current，不能把此前未记录操作算作本次完整流程。验图片实际内容用 verificationMode:visual，并核对当前会话模型的 image 能力与实际验收输入截图；不要把外层 ModLens 读取截图算成 E2E 的视觉断言。直控需要 execution:direct 和 directReason。同会话交接须准确匹配空闲 agent 身份，其他会话仍拒绝。
+参考 [dshE2E 使用说明](../plugin/dsh-e2e/USAGE.md#操作入口与验收范围)。必须观察到 e2e_phone.run、独立断言、报告写入、日志状态和控制释放；仅看到 status/resolve_app 或面板不能说明测试已经执行。只验当前页明确使用 runMode:verify_current，不能把此前未记录操作算作本次完整流程。验图片实际内容用 verificationMode:visual，并核对当前会话模型的 image 能力与实际验收输入截图；不要把外层 ModLens 读取截图算成 E2E 的视觉断言。直控需要 execution:direct 和 directReason。同会话交接须准确匹配空闲 agent 身份，其他会话仍拒绝。
