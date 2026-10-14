@@ -9,12 +9,13 @@ function Highlight({ text, pattern }) {
   parts.push(text.slice(start)); return parts;
 }
 
-export function LogViewer({ url, exportUrl, visible = true, live = false, initialWindow, refreshKey = 0, timeBasis = '本机采集时间' }) {
+export function LogViewer({ url, exportUrl, visible = true, live = false, initialWindow, refreshKey = 0, timeBasis = '本机采集时间', onAnalyze }) {
   const [filters, setFilters] = useState({ query: '', tag: '', domain: '', pid: '', tid: '', level: '', regex: false, caseSensitive: false, from: initialWindow?.from || '', until: initialWindow?.until || '' });
   const [debounced, setDebounced] = useState(filters), [offset, setOffset] = useState(0), [history, setHistory] = useState([]), [page, setPage] = useState(), [error, setError] = useState('');
   const [findOpen, setFindOpen] = useState(false), [find, setFind] = useState(''), [findCase, setFindCase] = useState(false), [findRegex, setFindRegex] = useState(false), [cursor, setCursor] = useState(0);
   const [fullRow, setFullRow] = useState(), [exporting, setExporting] = useState(false), [exportError, setExportError] = useState('');
-  const root = useRef(), findInput = useRef(), rows = useRef(new Map());
+  const root = useRef(), findInput = useRef(), rows = useRef(new Map()), fullRequest = useRef();
+  useEffect(() => { setFullRow(undefined); fullRequest.current?.abort(); return () => fullRequest.current?.abort(); }, [url, debounced, offset]);
   useEffect(() => { const t = setTimeout(() => setDebounced(filters), 250); return () => clearTimeout(t); }, [filters]);
   useEffect(() => { setOffset(0); setHistory([]); }, [debounced, url]);
   useEffect(() => { if (initialWindow) setFilters(f => ({ ...f, from: initialWindow.from, until: initialWindow.until })); }, [initialWindow]);
@@ -43,7 +44,8 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
   useEffect(() => { setCursor(0); }, [find, findCase, findRegex, page]);
   useEffect(() => { setFullRow(undefined); }, [page]);
   async function readFull(index) {
-    try { const response = await fetch(url + '&' + new URLSearchParams({ ...debounced, offset: offset + index, limit: 1, fullMessage: true })), value = await response.json(); if (!response.ok || value.error) throw Error(value.error || '完整行读取失败'); setFullRow(value.entries?.[0]); } catch (e) { setError(e.message); }
+    fullRequest.current?.abort(); const controller = new AbortController(); fullRequest.current = controller;
+    try { const response = await fetch(url + '&' + new URLSearchParams({ ...debounced, offset: offset + index, limit: 1, fullMessage: true }), { signal: controller.signal }), value = await response.json(); if (!response.ok || value.error) throw Error(value.error || '完整行读取失败'); if (!controller.signal.aborted) setFullRow(value.entries?.[0]); } catch (e) { if (!controller.signal.aborted) setError(e.message); }
   }
   async function exportFiltered() {
     if (exporting) return; setExporting(true); setExportError(''); let destination;
@@ -75,7 +77,7 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
       <p className="muted">磁盘/记录 {page.total} 条 · 符合过滤 {page.filteredTotal} 条 · 本页 {page.entries.length ? offset + 1 : 0}–{offset + page.entries.length} · 每页最多 100 条 / 24 KiB</p>
       {(page.logCollection?.warnings || []).map((warning, i) => <p className="muted" key={i}>{warning}</p>)}
       <div className="log-table-scroll"><table className="log-table"><thead><tr>{['时间', 'PID:TID', '级别', 'DOMAIN', 'TAG', '消息'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{page.entries.map((e, index) => <tr key={index} ref={node => node ? rows.current.set(index, node) : rows.current.delete(index)} className={'log-' + e.level + (find && matches[cursor] === index ? ' find-current' : '')}><td><Highlight text={e.timestamp || e.capturedAt} pattern={pattern}/></td><td><Highlight text={`${e.pid ?? '—'}:${e.tid ?? '—'}`} pattern={pattern}/></td><td><Highlight text={e.level} pattern={pattern}/></td><td><Highlight text={e.domain || '—'} pattern={pattern}/></td><td title={e.process}><Highlight text={e.tag || '—'} pattern={pattern}/></td><td><div className="log-message-preview"><Highlight text={e.message} pattern={pattern}/></div><div className="row muted"><button className="log-detail-button" onClick={() => readFull(index)}>查看详情</button>{e.messageTruncated && <span>预览截断 · 共 {e.messageLength} 字符</span>}</div></td></tr>)}</tbody></table>{!page.entries.length && <div className="empty">没有符合过滤的日志。请检查时间范围及采集状态。</div>}</div>
-      {fullRow && <div className="box"><div className="row spread"><strong>{fullRow.tag} · 单条原记录</strong><button onClick={() => setFullRow(undefined)}>关闭</button></div><pre>{fullRow.message}</pre>{fullRow.messageTruncated && <p className="muted">单条读取仍限制 8192 字符，更长内容请查看原始文件。</p>}</div>}
+      {fullRow && <div className="box"><div className="row spread"><strong>{fullRow.tag} · {fullRow.sourceLine ? `原文件第 ${fullRow.sourceLine} 行` : '单条原记录'}</strong><div className="row">{onAnalyze && <button onClick={() => onAnalyze(fullRow, debounced)}>AI 分析此行</button>}<button onClick={() => navigator.clipboard.writeText(fullRow.raw || fullRow.message).catch(() => setError('复制失败，请选择正文后复制'))}>复制完整行</button><button onClick={() => setFullRow(undefined)}>关闭</button></div></div><pre>{fullRow.raw || fullRow.message}</pre>{fullRow.messageTruncated && <p className="muted">单条读取仍限制 8192 字符，更长内容请查看原始文件。</p>}</div>}
       <div className="row pager"><button disabled={!offset} onClick={() => { setOffset(0); setHistory([]); }}>首页</button><button disabled={!history.length} onClick={() => { setOffset(history.at(-1)); setHistory(h => h.slice(0, -1)); }}>上一页</button><button disabled={page.nextOffset === null} onClick={() => { setHistory(h => [...h.slice(-999), offset]); setOffset(page.nextOffset); }}>下一页</button></div>
     </>}
   </section>;

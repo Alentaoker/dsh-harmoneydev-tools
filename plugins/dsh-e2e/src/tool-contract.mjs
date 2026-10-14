@@ -1,6 +1,6 @@
 const runFields = ['goal', 'expectation', 'name', 'appBundle', 'appAbility', 'logAppBundle', 'appName', 'collectLogs', 'logMaxBytes', 'serial', 'timeoutMs', 'maxActions', 'maxModelCalls', 'steps', 'runMode', 'verificationMode'];
 const logFields = ['id', 'offset', 'limit', 'level', 'query', 'tag', 'domain', 'pid', 'tid', 'regex', 'caseSensitive', 'fullMessage', 'from', 'until'];
-const operations = { status: [], resolve_app: ['query', 'appName', 'name', 'serial', 'offset', 'limit'], run: runFields, list_runs: ['offset', 'limit', 'query'], get_report: ['id'], get_logs: logFields, list_log_files: ['offset', 'limit'], get_file_logs: logFields, replay: ['id'], retry: ['id', 'clearSteps', ...runFields], cancel: ['id'] };
+const operations = { status: [], resolve_app: ['query', 'appName', 'name', 'serial', 'offset', 'limit'], run: runFields, list_runs: ['offset', 'limit', 'query'], get_report: ['id'], get_logs: logFields, list_log_files: ['offset', 'limit', 'query'], get_file_logs: [...logFields, 'lineFrom', 'lineUntil'], replay: ['id'], retry: ['id', 'clearSteps', ...runFields], cancel: ['id'] };
 export function validateToolCall(args) {
   const fields = operations[args?.operation];
   if (!fields) throw Error('不支持的 E2E 操作');

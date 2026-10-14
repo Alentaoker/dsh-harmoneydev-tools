@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { SafeHarmonyPanel } from '../vendor/components/workspace/HarmonyPanel';
 import './theme.css';
 import { version } from '../package.json';
+import { LogSessionContext, appendAnalysisDraft } from './log-session';
 export const inject = ['slots', 'sidebarRight', 'sidebarRightTabs', 'conversation', 'sessions'];
 export function apply(ctx: any) {
   const id = 'dsh-harmony', kind = 'dshHarmony';
@@ -17,7 +18,9 @@ export function apply(ctx: any) {
       if (actx) ctx.conversation.input.for(actx).setDraft(prompt);
       else throw new Error('当前会话已关闭，请重新打开会话');
     };
-    return <div className="dshHarmony"><SafeHarmonyPanel active={info.tab.visible} cwd={cwd} pluginVersion={version} onOpenLocalTerminal={() => ctx.sidebarRight.openTabIn(sessionId, 'terminal')} onGuideAgent={guide} /></div>;
+    const openLogs = (fileId: string) => { if (!sessionId) return; sessionStorage.setItem('dshE2E:open-log:' + sessionId, fileId); ctx.sidebarRight.openTabIn(sessionId, 'dshE2E'); window.dispatchEvent(new CustomEvent('dshE2E:open-logs', { detail: { sessionId, id: fileId } })); };
+    const analyze = (text: string) => { const session = sessionId && ctx.sessions.scope(sessionId); if (!session) throw Error('请先打开一个会话'); appendAnalysisDraft(ctx.conversation.input.for(session), text); };
+    return <div className="dshHarmony"><LogSessionContext.Provider value={{ sessionId, onOpenLogs: openLogs, onAnalyze: analyze }}><SafeHarmonyPanel active={info.tab.visible} cwd={cwd} pluginVersion={version} onOpenLocalTerminal={() => ctx.sidebarRight.openTabIn(sessionId, 'terminal')} onGuideAgent={guide} /></LogSessionContext.Provider></div>;
   }
   function Header(props: any) { return <button title="鸿蒙设备控制与测试工作台" onClick={() => props.sessionId ? ctx.sidebarRight.openTabIn(props.sessionId, kind) : ctx.sidebarRight.openTab(kind)}>dshHarmony</button>; }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel)), 'dshHarmony: body');

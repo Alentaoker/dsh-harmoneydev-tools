@@ -19,12 +19,23 @@ export function apply(ctx) {
 }
 export function registerRoutes(ctx, service) {
   for (const [path, methods, handler] of [
-    ['/api/dsh-e2e/log-library/list', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.list(p.get('offset') || 0, p.get('limit') || 20); }],
-    ['/api/dsh-e2e/log-library/begin', ['POST'], async request => service.logLibrary.begin(await mutationBody(request))],
-    ['/api/dsh-e2e/log-library/chunk', ['POST'], async request => { const origin = request.headers.get('origin'); if (origin && origin !== new URL(request.url).origin && origin !== 'null') throw Error('请求来源不匹配'); const p = new URL(request.url).searchParams; const length = Number(request.headers.get('content-length')); if (length > 262144) throw Error('日志分块过大'); const data = Buffer.from(await request.arrayBuffer()); return service.logLibrary.chunk(p.get('id'), Number(p.get('index')), data); }],
-    ['/api/dsh-e2e/log-library/finish', ['POST'], async request => service.logLibrary.finish((await mutationBody(request)).id)],
-    ['/api/dsh-e2e/log-library/abort', ['POST'], async request => service.logLibrary.abort((await mutationBody(request)).id)],
-    ['/api/dsh-e2e/log-library/logs', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.getLogs(p.get('id'), Object.fromEntries([...p].filter(([key]) => key !== 'id'))); }],
+    ['/api/dsh-e2e/log-library/capabilities', ['GET'], request => ({ protocolVersion: 2, sessionId: requestScope(request, true).sessionId, storage: 'session', plugin: 'dshE2E' })],
+    ['/api/dsh-e2e/log-library/list', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.list(p.get('offset') || 0, p.get('limit') || 20, requestScope(request, true), { query: p.get('query') || '', sourceKind: p.get('sourceKind') || '', sort: p.get('sort') || 'newest' }); }],
+    ['/api/dsh-e2e/log-library/info', ['GET'], request => service.logLibrary.info(new URL(request.url).searchParams.get('id'), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/select', ['POST'], async request => service.logLibrary.select(await mutationBody(request), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/unassigned', ['GET'], request => service.logLibrary.unassigned(requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/trash', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.trash(p.get('offset') || 0, p.get('limit') || 20, requestScope(request, true)); }],
+    ['/api/dsh-e2e/log-library/usage', ['GET'], request => service.logLibrary.usage(requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/purge', ['POST'], async request => { const body = await mutationBody(request); if (body.confirm !== true) throw Error('请明确确认永久清空当前会话的回收区'); return service.logLibrary.purge(requestScope(request, true), body.before); }],
+    ['/api/dsh-e2e/log-library/rename', ['POST'], async request => { const body = await mutationBody(request); return service.logLibrary.rename(body.id, body.name, requestScope(request, true)); }],
+    ['/api/dsh-e2e/log-library/assign', ['POST'], async request => service.logLibrary.assign((await mutationBody(request)).id, requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/delete', ['POST'], async request => service.logLibrary.remove(await mutationBody(request, 512 * 1024), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/restore', ['POST'], async request => { const body = await mutationBody(request); return service.logLibrary.restore(body.batchId, requestScope(request, true), body.ids); }],
+    ['/api/dsh-e2e/log-library/begin', ['POST'], async request => service.logLibrary.begin(await mutationBody(request), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/chunk', ['POST'], async request => { const scope = requestScope(request, true), origin = request.headers.get('origin'); if (origin && origin !== new URL(request.url).origin && origin !== 'null') throw Error('请求来源不匹配'); const p = new URL(request.url).searchParams; const length = Number(request.headers.get('content-length')); if (length > 262144) throw Error('日志分块过大'); const data = Buffer.from(await request.arrayBuffer()); return service.logLibrary.chunk(p.get('id'), Number(p.get('index')), data, scope); }],
+    ['/api/dsh-e2e/log-library/finish', ['POST'], async request => service.logLibrary.finish((await mutationBody(request)).id, requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/abort', ['POST'], async request => service.logLibrary.abort((await mutationBody(request)).id, requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/logs', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.getLogs(p.get('id'), Object.fromEntries([...p].filter(([key]) => key !== 'id')), requestScope(request, true)); }],
     ['/api/dsh-e2e/status', ['GET'], request => service.status(requestScope(request))],
     ['/api/dsh-e2e/runs', ['GET'], request => { const p = new URL(request.url).searchParams; return service.listPage({ ...requestScope(request), offset: p.get('offset') || 0, limit: p.get('limit') || 20, query: p.get('query') || '', status: p.get('status') || undefined, archived: p.get('archived') === 'true' }); }],
     ['/api/dsh-e2e/report', ['GET'], request => service.report(new URL(request.url).searchParams.get('id'), requestScope(request))],
@@ -33,11 +44,11 @@ export function registerRoutes(ctx, service) {
     ['/api/dsh-e2e/archive', ['POST'], async request => { const body = await mutationBody(request); if (typeof body.archived !== 'boolean') throw new Error('归档参数无效'); return service.archive(body.id, body.archived, requestScope(request, true)); }],
   ]) ctx.effect(() => ctx.connection.fetch.register({ path, methods, requestBody: 'buffered', async fetch(request) { try { return Response.json(await handler(request), { headers: { 'cache-control': 'no-store' } }); } catch (error) { return Response.json({ error: error.message }, { status: 400 }); } } }), `dshE2E: ${path}`);
   for (const path of ['/api/dsh-e2e/log-export', '/api/dsh-e2e/log-library/export']) ctx.effect(() => ctx.connection.fetch.register({ path, methods: ['GET'], requestBody: 'buffered', async fetch(request) {
-    try { const p = new URL(request.url).searchParams, options = Object.fromEntries(p); const source = path.includes('log-library') ? await service.logLibrary.export(p.get('id'), options) : await exportLogStream(await service.get(p.get('id'), requestScope(request)), options); return new Response(Readable.toWeb(Readable.from(source)), { headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="filtered-logs.jsonl"', 'x-content-type-options': 'nosniff' } }); }
+    try { const p = new URL(request.url).searchParams, options = Object.fromEntries(p); const source = path.includes('log-library') ? await service.logLibrary.export(p.get('id'), options, requestScope(request, true)) : await exportLogStream(await service.get(p.get('id'), requestScope(request)), options); return new Response(Readable.toWeb(Readable.from(source)), { headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="filtered-logs.jsonl"', 'x-content-type-options': 'nosniff' } }); }
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
   } }), 'dshE2E: filtered log export ' + path);
   ctx.effect(() => ctx.connection.fetch.register({ path: '/api/dsh-e2e/log-library/source', methods: ['GET'], requestBody: 'buffered', async fetch(request) {
-    try { const value = await service.logLibrary.source(new URL(request.url).searchParams.get('id')); return new Response(Readable.toWeb(createReadStream(value.path)), { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(value.name), 'x-content-type-options': 'nosniff' } }); }
+    try { const value = await service.logLibrary.source(new URL(request.url).searchParams.get('id'), requestScope(request, true)); return new Response(Readable.toWeb(createReadStream(value.path)), { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(value.name), 'x-content-type-options': 'nosniff' } }); }
     catch (error) { return Response.json({ error: error.message }, { status: 404 }); }
   } }), 'dshE2E: original log');
   ctx.effect(() => ctx.connection.fetch.register({ path: '/api/dsh-e2e/artifact', methods: ['GET'], requestBody: 'buffered', async fetch(request) {
@@ -51,7 +62,7 @@ export function registerRoutes(ctx, service) {
     } catch (error) { return Response.json({ error: error.message }, { status: 404 }); }
   } }), 'dshE2E: artifacts');
 }
-export async function mutationBody(request) {
+export async function mutationBody(request, maximum = 4096) {
   const origin = request.headers.get('origin'); if (origin && origin !== new URL(request.url).origin && origin !== 'null') throw new Error('请求来源不匹配');
-  const text = await request.text(); if (text.length > 4096) throw new Error('请求过大'); return JSON.parse(text);
+  const text = await request.text(); if (text.length > maximum) throw new Error('请求过大'); return JSON.parse(text);
 }

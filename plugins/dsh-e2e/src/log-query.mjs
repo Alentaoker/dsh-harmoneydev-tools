@@ -55,12 +55,15 @@ export function normalizeLog(entry) {
 }
 
 export function compileLogQuery(options = {}) {
+  const lineFrom = options.lineFrom === undefined || options.lineFrom === '' ? undefined : Number(options.lineFrom), lineUntil = options.lineUntil === undefined || options.lineUntil === '' ? undefined : Number(options.lineUntil);
+  if (lineFrom !== undefined && (!Number.isSafeInteger(lineFrom) || lineFrom < 1) || lineUntil !== undefined && (!Number.isSafeInteger(lineUntil) || lineUntil < 1) || lineFrom !== undefined && lineUntil !== undefined && lineFrom > lineUntil) throw Error('原文件行号范围无效');
   if (options.level && !Object.hasOwn(severity, options.level)) throw Error('日志级别无效');
   const from = options.from ? Date.parse(options.from) : undefined, until = options.until ? Date.parse(options.until) : undefined;
   if (options.from && !Number.isFinite(from) || options.until && !Number.isFinite(until) || from !== undefined && until !== undefined && from > until) throw Error('日志时间范围无效');
   const fields = ['tag', 'domain', 'pid', 'tid'];
   const patterns = Object.fromEntries(['query', ...fields].map(field => [field, compilePattern(options[field] ?? '', options)]));
   return entry => {
+    if (lineFrom !== undefined && (!Number.isSafeInteger(entry.sourceLine) || entry.sourceLine < lineFrom) || lineUntil !== undefined && (!Number.isSafeInteger(entry.sourceLine) || entry.sourceLine > lineUntil)) return false;
     const e = normalizeLog(entry), at = Date.parse(e.capturedAt);
     if (options.level && severity[e.level] < severity[options.level]) return false;
     if (from !== undefined && (!Number.isFinite(at) || at < from) || until !== undefined && (!Number.isFinite(at) || at > until)) return false;
@@ -78,5 +81,5 @@ export function validatePage(options = {}) {
 export function publicLog(entry, maximum = 2000) {
   const e = normalizeLog(entry);
   const message = String(e.message || '');
-  return { timestamp: e.timestamp, capturedAt: e.capturedAt, pid: e.pid, tid: e.tid, domain: e.domain, process: e.process, level: e.level, tag: e.tag, message: message.slice(0, maximum), messageTruncated: message.length > maximum, messageLength: message.length };
+  return { timestamp: e.timestamp, capturedAt: e.capturedAt, sourceLine: e.sourceLine, pid: e.pid, tid: e.tid, domain: e.domain, process: e.process, level: e.level, tag: e.tag, raw: maximum > 2000 ? String(e.raw || '').slice(0, maximum) : undefined, message: message.slice(0, maximum), messageTruncated: message.length > maximum, messageLength: message.length };
 }

@@ -260,9 +260,28 @@
 .logFilters small { grid-column: 1 / -1; color: var(--text-muted); }
 .logActions { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 6px; }
 .logActions button,.logDetails button { border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg); color: var(--text-muted); padding: 4px 6px; font-size: var(--text-xs); }
-.logDetails { flex: 0 0 auto; max-height: 35%; overflow: auto; border-top: 1px solid var(--border); padding: 8px; }
+.logDetails { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; overflow: hidden; border-top: 1px solid var(--border); padding: 0; }
 .logDetails > div { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .logDetails pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-xs); }
+.logDetailResize { height: 8px; flex: 0 0 8px; cursor: row-resize; touch-action: none; background: #37425044; }
+.logDetailResize:hover,.logDetailResize:focus-visible { background: #82a9da88; }
+.logDetails > .logDetailTools { flex: 0 0 auto; padding: 4px 8px; gap: 5px; }
+.logDetails > .logDetailContent { display: block; min-height: 0; flex: 1; overflow: auto; padding: 0 8px; }
+.logDetails[data-wrap="false"] pre { white-space: pre; overflow-wrap: normal; }
+.logAppPicker { position: relative; min-width: 0; flex: 1; }
+.logAppPicker > button { width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: 30px; border: 1px solid #374250; border-radius: 5px; background: #11151b; color: #d9e1eb; padding: 4px 8px; }
+.logAppPopup { position: absolute; top: 34px; left: 0; width: min(530px,100%); min-width: 220px; z-index: 10; border: 1px solid #718ad8; border-radius: 7px; box-shadow: 0 8px 28px #0008; background: #181e27; padding: 7px; }
+.logAppSearch { display: flex; gap: 4px; }
+.logAppSearch input { flex: 1; min-width: 0; background: #11151b; border: 1px solid #718ad8; color: #d9e1eb; border-radius: 5px; padding: 7px; }
+.logAppSearch button,.logAppAll { border: 1px solid #374250; background: #202a38; color: #d9e1eb; border-radius: 4px; padding: 6px; }
+.logAppCount { padding: 5px 2px; color: #9baec4; font-size: 11px; }
+.logAppCandidates { height: 280px; overflow: auto; }
+.logAppOption { position: absolute; left: 0; width: 100%; height: 56px; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: 22px 20px; text-align: left; padding: 6px 8px; background: transparent; color: #d9e1eb; border: 0; border-bottom: 1px solid #374250; }
+.logAppOption strong,.logAppOption small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logAppOption small { grid-row: 2; color: #9baec4; }
+.logAppOption span { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 11px; }
+.logAppOption[data-active="true"],.logAppOption:hover { background: #334e70; }
+.logAppAll { width: 100%; margin-top: 5px; text-align: left; }
 .logMeta { flex-wrap: wrap; }
 .applicationWorkbench { display: flex; flex-direction: column; min-width: 0; gap: 8px; }
 .applicationFeedback { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-panel); }

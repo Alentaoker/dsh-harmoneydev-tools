@@ -17,7 +17,7 @@ async function copyTree(source,target,pluginDepth=0){
     if(entry.isDirectory()){
       await mkdir(join(target,entry.name),{recursive:true});await copyTree(join(source,entry.name),join(target,entry.name),pluginDepth+1);
     }else if(entry.isFile()){
-      if(deniedFiles.test(entry.name)||entry.name.startsWith('.env')||entry.name.startsWith('session'))continue;
+      if(deniedFiles.test(entry.name)||entry.name.startsWith('.env')||(entry.name.startsWith('session')&&!entry.name.endsWith('.test.mjs')))continue;
       await copyFile(join(source,entry.name),join(target,entry.name));
       files.push({path:relative(output,join(target,entry.name)).replaceAll('\\','/'),sha256:createHash('sha256').update(await readFile(join(target,entry.name))).digest('hex')});
     }

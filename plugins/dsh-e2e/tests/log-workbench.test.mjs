@@ -53,20 +53,20 @@ test('写盘容量和队列有限，超限明确报告；超长行解析内存�
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('离线日志无需会话或模型，分块导入保留原始UTF-8、自动识别HiLog和未知行', async () => {
+test('离线日志按会话隔离、无需模型，分块导入保留原始UTF-8、自动识别HiLog和未知行', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-e2e-log-library-'));
   try {
-    const library = createLogLibrary(root), source = Buffer.from('10-14 01:02:03.004 61 63 E C04707 HaAppEvent: 发生错误\n10-14 01:02:04.005 61-64 C02300/test.app/Worker I 完成任务\n原文无法解析\n');
-    const upload = await library.begin({ name: 'hi.log', size: source.length });
-    await assert.rejects(library.chunk(upload.id, 1, source.slice(0, 3)), /顺序/);
-    for (let at = 0, index = 0; at < source.length; at += 7) await library.chunk(upload.id, index++, source.slice(at, at + 7));
-    const completed = await library.finish(upload.id); assert.equal(completed.parsed, 2); assert.equal(completed.unparsed, 1);
-    assert.equal((await library.list()).files[0].id, completed.id);
-    const page = await library.getLogs(completed.id, { tag: 'HaAppEvent', domain: 'C04707', pid: '61', tid: '63', level: 'error', limit: 2 });
+    const scope = {sessionId:'session-A'}, library = createLogLibrary(root), source = Buffer.from('10-14 01:02:03.004 61 63 E C04707 HaAppEvent: 发生错误\n10-14 01:02:04.005 61-64 C02300/test.app/Worker I 完成任务\n原文无法解析\n');
+    const upload = await library.begin({ name: 'hi.log', size: source.length }, scope);
+    await assert.rejects(library.chunk(upload.id, 1, source.slice(0, 3), scope), /顺序/);
+    for (let at = 0, index = 0; at < source.length; at += 7) await library.chunk(upload.id, index++, source.slice(at, at + 7), scope);
+    const completed = await library.finish(upload.id, scope); assert.equal(completed.parsed, 2); assert.equal(completed.unparsed, 1);
+    assert.equal((await library.list(0,20,scope)).files[0].id, completed.id);
+    const page = await library.getLogs(completed.id, { tag: 'HaAppEvent', domain: 'C04707', pid: '61', tid: '63', level: 'error', limit: 2 }, scope);
     assert.equal(page.total, 3); assert.equal(page.filteredTotal, 1); assert.equal(page.entries[0].message, '发生错误');
-    const raw = await library.source(completed.id); assert.deepEqual(await readFile(raw.path), source);
-    let exported = ''; for await (const chunk of await library.export(completed.id, { level: 'error' })) exported += chunk.toString(); assert.equal(exported.trim().split('\n').length, 1); assert.equal(JSON.parse(exported).message, '发生错误');
-    await assert.rejects(library.begin({ name: 'big.log', size: 32 * 1024 * 1024 + 1 }), /32 MiB/);
+    const raw = await library.source(completed.id, scope); assert.deepEqual(await readFile(raw.path), source);
+    let exported = ''; for await (const chunk of await library.export(completed.id, { level: 'error' }, scope)) exported += chunk.toString(); assert.equal(exported.trim().split('\n').length, 1); assert.equal(JSON.parse(exported).message, '发生错误');
+    await assert.rejects(library.begin({ name: 'big.log', size: 32 * 1024 * 1024 + 1 }, scope), /32 MiB/);
     assert.equal(parseImportedLog('{"tag":"App","message":"api_key=private-value"}').message, 'api_key=[redacted]');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -79,13 +79,13 @@ test('真实HDC格式拆分DOMAIN/进程/TAG；BOM及多字节分块有效，UTF
   await assert.rejects(async () => { for await (const _ of boundedLogLines(Readable.from([Buffer.from('a\0b')]), 8192, true)) {} }, /UTF-16/);
 });
 
-test('离线日志路由不依赖活动会话；测试默认预算为最大值', async () => {
+test('离线日志路由需要会话；测试默认预算为最大值', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-e2e-log-routes-'));
   try {
     const routes = new Map(), library = createLogLibrary(root), ctx = { effect(fn) { fn(); }, connection: { fetch: { register(route) { routes.set(route.path, route); } } } };
     registerRoutes(ctx, { logLibrary: library });
     const response = await routes.get('/api/dsh-e2e/log-library/list').fetch(new Request('http://localhost/api/dsh-e2e/log-library/list'));
-    assert.equal(response.status, 200); assert.equal((await response.json()).total, 0);
+    assert.equal(response.status, 400); const scoped = await routes.get('/api/dsh-e2e/log-library/list').fetch(new Request('http://localhost/api/dsh-e2e/log-library/list?sessionId=A')); assert.equal(scoped.status, 200); assert.equal((await scoped.json()).total, 0);
     const run = validateRun({ goal: '检查页面', expectation: '标题可见' });
     assert.deepEqual([run.timeoutMs, run.maxActions, run.maxModelCalls], [300000, 30, 20]);
   } finally { await rm(root, { recursive: true, force: true }); }

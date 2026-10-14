@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { logStatusLabels } from './log-query.mjs';
 import { LogViewer } from './LogViewer.jsx';
 import { LogWorkbench } from './LogWorkbench.jsx';
+import { appendLogDraft } from './log-client.mjs';
 import { statusLabels, stageLabels } from './presentation.mjs';
 import './client.css';
 export const inject = ['slots', 'sidebarRight', 'sidebarRightTabs', 'conversation', 'sessions'];
@@ -70,7 +71,10 @@ export function apply(ctx) {
   ctx.effect(()=>ctx.sidebarRightTabs.register({id,kind,title:()=>'dshE2E',guide:[{id:kind,order:6,title:()=>'dshE2E',description:()=>'鸿蒙测试、报告与调整复测'}]}),'dshE2E: tab');
   function Panel(props) {
     const info=props.useTabInfo?.(),visible=info?.tab?.visible!==false,sessionId=props.sessionId;
-    const [workbench,setWorkbench]=useState(false);
+    const [workbench,setWorkbench]=useState(false),[openFileId,setOpenFileId]=useState();
+    useEffect(()=>{const target=sessionStorage.getItem('dshE2E:open-log:'+sessionId);if(target){setOpenFileId(target);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}else setOpenFileId(undefined);
+      const open=event=>{if(event.detail?.sessionId===sessionId){setOpenFileId(event.detail.id);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}};window.addEventListener('dshE2E:open-logs',open);return()=>window.removeEventListener('dshE2E:open-logs',open);
+    },[sessionId]);
     const [scope,setScope]=useState('session'),[filter,setFilter]=useState(''),[query,setQuery]=useState(''),[offset,setOffset]=useState(0),[archived,setArchived]=useState(false);
     const [page,setPage]=useState(),[status,setStatus]=useState(),[error,setError]=useState(''),[notice,setNotice]=useState(''),[tick,setTick]=useState(0);
     const [selectedId,setSelectedId]=useState(),[selected,setSelected]=useState(),[tab,setTab]=useState('overview'),[form,setForm]=useState(null);
@@ -82,7 +86,7 @@ export function apply(ctx) {
     useEffect(()=>{setSelectedId(undefined);setSelected(undefined);setOffset(0);setForm(null);setNotice('');},[scope]);
     useEffect(()=>{setOffset(0);},[filter,search,archived]);
     useEffect(()=>{
-      if(!visible||!sessionId)return;
+      if(!visible||!sessionId||workbench)return;
       let alive=true,timer;const controller=new AbortController();
       async function refresh(){try{
         const [s,p]=await Promise.all([json(endpoint('status'),{signal:controller.signal}),json(endpoint('runs',{offset,limit:20,status:filter||undefined,query:search,archived}),{signal:controller.signal})]);
@@ -92,14 +96,14 @@ export function apply(ctx) {
         timer=setTimeout(refresh,s.active?.length?3000:15000);
       }catch(e){if(alive&&e.name!=='AbortError'){setError(e.message);timer=setTimeout(refresh,15000);}}}
       refresh();return()=>{alive=false;clearTimeout(timer);controller.abort();};
-    },[sessionId,scope,filter,search,offset,archived,tick,visible]);
+    },[sessionId,scope,filter,search,offset,archived,tick,visible,workbench]);
     useEffect(()=>{
       setSelected(undefined);setTab('overview');setLogWindow(undefined);
-      if(!selectedId||!visible)return;
+      if(!selectedId||!visible||workbench)return;
       let alive=true,timer;const controller=new AbortController();
       async function read(){try{const value=await json(endpoint('report',{id:selectedId}),{signal:controller.signal});if(!alive)return;setSelected(value);setError('');if(active(value.run))timer=setTimeout(read,3000);}catch(e){if(alive&&e.name!=='AbortError')setError(e.message);}}
       read();return()=>{alive=false;clearTimeout(timer);controller.abort();};
-    },[selectedId,sessionId,scope,visible,tick]);
+    },[selectedId,sessionId,scope,visible,tick,workbench]);
     function guide(text){try{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话。');ctx.conversation.input.for(session).setDraft(text);setNotice('已填入当前会话的输入框，请检查后发送。');setForm(null);}catch(e){setError(e.message);}}
     async function mutate(path,body){try{await json(endpoint(path),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});setTick(t=>t+1);setNotice(path==='cancel'?'任务已停止，报告包含控制权释放结果。':body.archived?'记录已归档，可在归档列表查看。':'记录已恢复。');}catch(e){setError(e.message);}}
     const open=run=>{setSelectedId(run.id);setForm(null);setNotice('');};
@@ -107,9 +111,9 @@ export function apply(ctx) {
     const live=status?.active?.find(r=>r.sessionId===sessionId),elapsed=live?(Date.now()-Date.parse(live.createdAt)):0;
     const artifact=(file,runId=selectedId)=>endpoint('artifact',{id:runId,file});
     const counts=page?.counts||{};
-    if(workbench)return <div className="de2e"><div className="row spread heading"><h2>dshE2E · 日志</h2><button onClick={()=>setWorkbench(false)}>测试工作台</button></div><LogWorkbench visible={visible}/></div>;
+    if(workbench)return <div className="de2e log-workbench-shell"><div className="row spread heading"><h2>dshE2E · 会话日志</h2><button onClick={()=>setWorkbench(false)}>测试工作台</button></div><LogWorkbench visible={visible} sessionId={sessionId} openFileId={openFileId} onDraft={text=>{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话');appendLogDraft(ctx.conversation.input.for(session),text);}}/></div>;
     return <div className="de2e">
-      <div className="row spread heading"><div><h2>dshE2E</h2><div className="muted">鸿蒙测试工作台 · {status?.version||'0.3.0'}</div></div><div className="row"><button onClick={()=>setWorkbench(true)}>日志工作台</button><button onClick={()=>setTick(t=>t+1)} aria-label="刷新测试记录">刷新</button><button className="primary" disabled={!sessionId} onClick={()=>{setForm({});setSelectedId(undefined);}}>新建测试</button></div></div>
+      <div className="row spread heading"><div><h2>dshE2E</h2><div className="muted">鸿蒙测试工作台 · {status?.version||'0.4.0-rc.1'}</div></div><div className="row"><button onClick={()=>setWorkbench(true)}>日志工作台</button><button onClick={()=>setTick(t=>t+1)} aria-label="刷新测试记录">刷新</button><button className="primary" disabled={!sessionId} onClick={()=>{setForm({});setSelectedId(undefined);}}>新建测试</button></div></div>
       {!sessionId?<div className="empty">打开一个会话后，可查看该会话的测试和报告。</div>:<>
       <div className="device"><strong>{status?.devices?.filter(d=>d.state==='online').map(d=>d.name||d.model).join('、')||'未发现在线设备'}</strong><div className="muted">{scope==='session'?'当前会话的测试记录':'全部会话历史 · 只读'} · 模型沿用当前会话</div></div>
       {error&&<div role="alert" className="notice error">{error}</div>}{notice&&<div role="status" className="notice">{notice}</div>}
