@@ -1,11 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-import {writeFile,rm,readFile} from 'node:fs/promises';
+import {writeFile,rm,readFile,mkdtemp} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 const file=new URL(`./.static-geometry-${process.pid}.mjs`,import.meta.url);
 const output=await build({entryPoints:['vendor/lib/harmony/device-manager.ts'],bundle:true,format:'esm',platform:'node',packages:'external',write:false,alias:{'@earendil-works/pi-ai':path.resolve('src/pi-ai.ts'),'@earendil-works/pi-coding-agent':path.resolve('src/pi-sdk.ts')},plugins:[{name:'unused-session-reader-test-boundary',setup(b){b.onLoad({filter:/src[\\/]pi-sdk\.ts$/},async args=>({contents:(await readFile(args.path,'utf8'))+'\nexport const SessionManager={open(){throw Error("Session reading is outside this geometry test")}};export function buildContextEntries(){throw Error("Session reading is outside this geometry test")}',loader:'ts',resolveDir:path.dirname(args.path)}));}}]});
 await writeFile(file,output.outputFiles[0].contents);const {HarmonyDeviceManager}=await import(file.href);test.after(()=>rm(file,{force:true}));
+
+test('failed runtime initialization is retried after a bounded interval and recovers without restarting the manager',async()=>{
+ const directory=await mkdtemp(path.join(tmpdir(),'dsh-runtime-retry-'));let now=0,ready=false,attempts=0,lists=0;
+ const backend={kind:'test',hdcPath:'test',listDevices:async()=>{lists++;return [{serial:'RUNTIME-RECOVERED',state:'online',capabilities:{}}];}};
+ const manager=new HarmonyDeviceManager({now:()=>now,configPath:path.join(directory,'harmony.json'),backendFactory:()=>{attempts++;if(!ready)throw Error('HDC is temporarily unavailable');return backend;}});
+ try{
+  assert.equal(attempts,1);
+  for(let i=0;i<4;i++)await assert.rejects(manager.listDevices());assert.equal(attempts,1);
+  now=5000;await assert.rejects(manager.listDevices());assert.equal(attempts,2);
+  ready=true;now=9999;await assert.rejects(manager.listDevices());assert.equal(attempts,2);
+  now=10000;const devices=await manager.listDevices();assert.equal(devices[0].serial,'RUNTIME-RECOVERED');assert.equal(attempts,3);assert.equal(lists,1);
+  assert.equal(manager.getState().runtime.status,'ready');
+ }finally{await manager.dispose();await rm(directory,{recursive:true,force:true});}
+});
+
+test('resaving the same runtime selection retries a failed backend and persists only a validated selection',async()=>{
+ const directory=await mkdtemp(path.join(tmpdir(),'dsh-runtime-config-')),configPath=path.join(directory,'harmony.json');
+ await writeFile(configPath,JSON.stringify({hdcPath:process.execPath}));let ready=false;
+ const manager=new HarmonyDeviceManager({configPath,backendFactory:()=>{if(!ready)throw Error('Unavailable');return {kind:'test',hdcPath:process.execPath,listDevices:async()=>[]};}});
+ try{
+  await assert.rejects(manager.updateConfig({hdcPath:process.execPath}));
+  assert.equal(JSON.parse(await readFile(configPath,'utf8')).hdcPath,process.execPath);
+  ready=true;await manager.updateConfig({hdcPath:process.execPath});assert.equal(manager.getState().runtime.status,'ready');
+ }finally{await manager.dispose();await rm(directory,{recursive:true,force:true});}
+});
 test('video recovery requires an explicitly confirmed manual lease before reaching the backend',async()=>{
  let releases=0;
  const manager=new HarmonyDeviceManager({backend:{kind:'test',hdcPath:'test',listDevices:async()=>[{serial:'TEST-RECOVERY',state:'online',capabilities:{}}],releaseVideoConflict:async()=>{releases++;}}});

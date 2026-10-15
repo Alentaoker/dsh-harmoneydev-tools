@@ -26,7 +26,7 @@ export interface DiscoverHdcOptions extends ResolveHdcOptions {
   selectionPath?: string;
 }
 
-const HDC_ENV_NAMES = ["PIORA_HARMONY_HDC_PATH", "HARMONY_HDC_PATH", "HDC_PATH"] as const;
+const HDC_ENV_NAMES = ["DSH_HARMONY_HDC_PATH", "PIORA_HARMONY_HDC_PATH", "HARMONY_HDC_PATH", "HDC_PATH"] as const;
 
 function isUsableFile(path: string): boolean {
   try {
@@ -218,7 +218,7 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
   const bundled = check(bundledHdcCandidate(env, platform));
   if (bundled) return { hdcPath: bundled, source: "bundled" };
 
-  throw new HarmonyError("HDC_NOT_FOUND", "HDC was not found in the system or the Piora application bundle.", {
+  throw new HarmonyError("HDC_NOT_FOUND", "未找到 HDC。请在设备设置中选择 DevEco SDK 的 hdc.exe 并保存；刷新设备后会重新检测。", {
     retryable: true,
   });
 }

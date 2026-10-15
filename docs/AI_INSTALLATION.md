@@ -163,3 +163,11 @@ DevEco 等外部投屏需在其软件关闭设备投屏后释放；DSH 会约 10
 - 将 Windows 长路径/中文路径、真实 HiLog 字典解析、损坏包、取消、局部成功分别列出。原厂工具在短系统临时目录解析并在结束后清理；无需给 SDK 程序复制整套工程。
 
 完整边界及资源实测见 LOG_WORKBENCH.md 和 VALIDATION.md。另一台实体电脑与其它操作系统没有实测时必须明确记录，不能以本机换目录等同另一电脑通过。
+
+## 9. HDC 配置与投屏恢复
+
+HDC 是手机连接依赖，插件内嵌的视频组件不能替代它。使用新电脑本机 SDK 的 hdc.exe；不要照抄旧电脑路径。可通过设备设置选择并保存，或在启动宿主前设置 DSH_HARMONY_HDC_PATH；旧的 PIORA_HARMONY_HDC_PATH/HARMONY_HDC_PATH/HDC_PATH 仍兼容。确认路径存在且 hdc list targets -v 返回具体 USB Connected 设备，UART Ready 不算手机在线。
+
+必须在真正宿主验证设备设置保存：前端请求 PUT /api/harmony/config，应成功并将 hdcPath 写入当前 DataHome/storages/dshHarmony/harmony.json，完整重启后仍保留。旧移植版本漏登记 PUT，会显示 Request failed (404)；不能把输入框出现路径当作已保存。升级后所有导出 HTTP 方法均随路由登记。
+
+后端初始化失败时按至少 5 秒间隔重试本机发现，不忙循环；选定同一路径重新保存也会重新校验并重建失败的后端。先恢复设备识别，再验投屏；HDC 缺失、USB Offline、锁屏和外部视频占用是不同故障，不据此批量结束设备进程。

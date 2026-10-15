@@ -30,7 +30,7 @@ let generated = `import { withHarnessAdmission } from './gateway';\n`;
 for (let i = 0; i < routeFiles.length; i++) generated += `import * as r${i} from ${JSON.stringify('../vendor/app/api/harmony/' + routeFiles[i].replaceAll('\\', '/'))};\n`;
 generated += 'export const routes = [\n' + routeFiles.map((p, i) => {
   const routePath = '/api/harmony/' + p.replaceAll('\\', '/').replace('/route.ts', '');
-  const methods = [...fs.readFileSync(path.join(vendor, 'app/api/harmony', p), 'utf8').matchAll(/export async function (GET|POST|HEAD)/g)].map(m => m[1]);
+  const methods = [...fs.readFileSync(path.join(vendor, 'app/api/harmony', p), 'utf8').matchAll(/export async function (GET|POST|HEAD|PUT|PATCH|DELETE|OPTIONS)\b/g)].map(m => m[1]);
   return `{ path: ${JSON.stringify(routePath)}, methods: ${JSON.stringify(methods)}, requestBody: 'buffered', fetch: (request: Request) => withHarnessAdmission(request, (req) => (r${i} as any)[req.method](req)) }`;
 }).join(',\n') + '\n];\n';
 generated += `import { desktopRoutes } from './desktop'; routes.push(...desktopRoutes);\n`;

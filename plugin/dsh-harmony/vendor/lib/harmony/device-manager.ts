@@ -229,6 +229,7 @@ export class HarmonyDeviceManager {
   private stoppingAll = false;
   private disposed = false;
   private lastDeviceRefreshAt = Number.NEGATIVE_INFINITY;
+  private backendRetryAt = Number.NEGATIVE_INFINITY;
   private deviceRefreshPromise?: Promise<HarmonyDevice[]>;
   private deviceRefreshController?: AbortController;
 
@@ -264,9 +265,11 @@ export class HarmonyDeviceManager {
     try {
       this.backend = this.backendFactory(this.config);
       this.runtimeError = undefined;
+      this.backendRetryAt = Number.NEGATIVE_INFINITY;
     } catch (error) {
       this.backend = undefined;
       this.runtimeError = asHarmonyError(error);
+      this.backendRetryAt = this.now() + 5_000;
     }
   }
 
@@ -565,6 +568,8 @@ export class HarmonyDeviceManager {
   }
 
   private async refreshDevices(signal?: AbortSignal): Promise<HarmonyDevice[]> {
+    signal?.throwIfAborted();
+    if (!this.disposed && !this.backend && !this.injectedBackend && this.now() >= this.backendRetryAt) this.tryCreateBackend();
     if (this.deviceRefreshPromise) return await awaitSharedOperation(this.deviceRefreshPromise, signal);
     const backend = this.requireBackend();
     const controller = new AbortController();
@@ -1989,7 +1994,8 @@ export class HarmonyDeviceManager {
     if (patch.vision === null) delete next.vision;
     else if (patch.vision !== undefined) next.vision = patch.vision;
     const previousConfig = this.config;
-    const runtimeChanged = next.hdcPath !== previousConfig.hdcPath || JSON.stringify(next.video) !== JSON.stringify(previousConfig.video);
+    const runtimeChanged = next.hdcPath !== previousConfig.hdcPath || JSON.stringify(next.video) !== JSON.stringify(previousConfig.video)
+      || (!this.backend && (patch.hdcPath !== undefined || patch.video !== undefined));
     let candidateBackend: HarmonyAutomationBackend | undefined;
     if (runtimeChanged) {
       // Validate the candidate before persisting it or disturbing the working
