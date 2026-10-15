@@ -9,3 +9,5 @@
 
 
 - **HarmonyOS SDK symbol 索引**：`skill/hdesign-to-arkts/resources/` 中的 JSON 派生自 SDK 正式资源成员与 SDK 字体 cmap；版本和输入哈希见 `symbol-source.json`。不包含 SDK 字体二进制或社区图库。SDK 原有权利不因本仓库源码许可改变，索引限本私有仓库配套使用。
+
+- **yauzl 3.4.0**：https://github.com/thejoshwolfe/yauzl ，MIT。用于按条目流式读取 ZIP，版本和传递依赖锁定在 dshE2E 的 package-lock.json；未打包第三方解压程序。

@@ -182,6 +182,7 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 type HarmonyPanelProps = {
+  openLogRequest?: number;
   active: boolean;
   maximized?: boolean;
   onMaximizedChange?: (maximized: boolean) => void;
@@ -195,7 +196,7 @@ type HarmonyPanelProps = {
 
 type FrameZoom = "fit" | "100" | "150" | "200";
 
-export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenLocalTerminal, onGuideAgent, onSnapshot, pluginVersion }: HarmonyPanelProps) {
+export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenLocalTerminal, onGuideAgent, onSnapshot, pluginVersion, openLogRequest }: HarmonyPanelProps) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -282,6 +283,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     setToolTab(tab);
   };
   const openTools = (tab = toolTab) => { changeToolTab(tab); setToolsVisited(true); setToolsOpen(true); setSettingsOpen(false); };
+  useEffect(() => { if (openLogRequest) openTools("logs"); }, [openLogRequest]);
   const closeTools = () => { setToolsOpen(false); toolsButtonRef.current?.focus(); };
   useEffect(() => {
     if (toolsOpen && drawerBodyRef.current) drawerBodyRef.current.scrollTop = drawerScrollPositions.current[`${selectedSerial}:${toolTab}`] ?? 0;

@@ -51,10 +51,14 @@ export function compilePattern(value = '', { regex = false, caseSensitive = fals
 export function normalizeLog(entry) {
   const originalTag = String(entry.tag || '');
   const parsed = originalTag.match(/^([A-Z]?[0-9A-Fa-f]{4,8})\/([^/]+)\/(.+)$/);
-  return { ...entry, domain: entry.domain ?? parsed?.[1] ?? '', process: entry.process ?? parsed?.[2] ?? '', tag: parsed?.[3] ?? originalTag, level: Object.hasOwn(severity, entry.level) ? entry.level : 'unknown' };
+  const process = entry.process ?? parsed?.[2] ?? '';
+  const explicit = entry.bundle || entry.bundleName || entry.appBundle || '';
+  const bundle = String(explicit || (/^[A-Za-z][\w]*(?:\.[\w]+)+(?:[:][\w.]+)?$/.test(process) ? process.split(':')[0] : ''));
+  return { ...entry, bundle, domain: entry.domain ?? parsed?.[1] ?? '', process, tag: parsed?.[3] ?? originalTag, level: Object.hasOwn(severity, entry.level) ? entry.level : 'unknown' };
 }
 
 export function compileLogQuery(options = {}) {
+  if (options.bundle !== undefined && (typeof options.bundle !== 'string' || options.bundle.length > 256)) throw Error('包名过滤参数无效');
   const lineFrom = options.lineFrom === undefined || options.lineFrom === '' ? undefined : Number(options.lineFrom), lineUntil = options.lineUntil === undefined || options.lineUntil === '' ? undefined : Number(options.lineUntil);
   if (lineFrom !== undefined && (!Number.isSafeInteger(lineFrom) || lineFrom < 1) || lineUntil !== undefined && (!Number.isSafeInteger(lineUntil) || lineUntil < 1) || lineFrom !== undefined && lineUntil !== undefined && lineFrom > lineUntil) throw Error('原文件行号范围无效');
   if (options.level && !Object.hasOwn(severity, options.level)) throw Error('日志级别无效');
@@ -65,6 +69,7 @@ export function compileLogQuery(options = {}) {
   return entry => {
     if (lineFrom !== undefined && (!Number.isSafeInteger(entry.sourceLine) || entry.sourceLine < lineFrom) || lineUntil !== undefined && (!Number.isSafeInteger(entry.sourceLine) || entry.sourceLine > lineUntil)) return false;
     const e = normalizeLog(entry), at = Date.parse(e.capturedAt);
+    if (options.bundle && (options.bundle === '__unknown__' ? !!e.bundle : e.bundle !== options.bundle)) return false;
     if (options.level && severity[e.level] < severity[options.level]) return false;
     if (from !== undefined && (!Number.isFinite(at) || at < from) || until !== undefined && (!Number.isFinite(at) || at > until)) return false;
     if (fields.some(field => patterns[field] && !patterns[field].test(e[field] ?? ''))) return false;
@@ -73,13 +78,13 @@ export function compileLogQuery(options = {}) {
 }
 
 export function validatePage(options = {}) {
-  const offset = Number(options.offset ?? 0), limit = Number(options.limit ?? 100);
-  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw Error('日志分页参数无效：offset≥0，limit 为 1～200');
+  const offset = Number(options.offset ?? 0), limit = Number(options.limit ?? 500);
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw Error('日志分页参数无效：offset≥0，limit 为 1～1000');
   return { offset, limit };
 }
 
 export function publicLog(entry, maximum = 2000) {
   const e = normalizeLog(entry);
   const message = String(e.message || '');
-  return { timestamp: e.timestamp, capturedAt: e.capturedAt, sourceLine: e.sourceLine, pid: e.pid, tid: e.tid, domain: e.domain, process: e.process, level: e.level, tag: e.tag, raw: maximum > 2000 ? String(e.raw || '').slice(0, maximum) : undefined, message: message.slice(0, maximum), messageTruncated: message.length > maximum, messageLength: message.length };
+  return { timestamp: e.timestamp, capturedAt: e.capturedAt, sourceLine: e.sourceLine, pid: e.pid, tid: e.tid, domain: e.domain, process: e.process, bundle: e.bundle, level: e.level, tag: e.tag, raw: maximum > 2000 ? String(e.raw || '').slice(0, maximum) : undefined, message: message.slice(0, maximum), messageTruncated: message.length > maximum, messageLength: message.length };
 }

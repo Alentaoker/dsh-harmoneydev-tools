@@ -320,6 +320,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     </div></details>
     <div className={styles.logActions}>
       {!findOpen ? <button type="button" onClick={() => setFindOpen(true)}>{copy("查找 · Ctrl+F", "Find · Ctrl+F")}</button> : null}
+      <button type="button" disabled={!logSession.sessionId || !logSession.onOpenLogs} onClick={() => logSession.onOpenLogs?.()}>{copy('日志工作台', 'Log workbench')}</button>
       <button type="button" disabled={saving || !visibleEntries.length} onClick={() => void saveLogs(false)}>{copy('保存日志', 'Save logs')}</button>
       <button type="button" disabled={saving || !visibleEntries.length || !logSession.sessionId} onClick={() => void saveLogs(true)}>{saving ? copy('保存中…', 'Saving…') : copy('保存到当前会话', 'Save to session')}</button>
       <details className={styles.logMore}><summary>{copy("复制 / 清理", "Copy / clear")}</summary><div>

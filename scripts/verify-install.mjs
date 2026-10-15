@@ -10,6 +10,7 @@ for(const name of ['dsh-harmony','dsh-e2e']){
   const installed=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));
   if(installed.name!==name)throw Error(`${name}: installed identity mismatch.`);
   for(const file of [installed.main,'lib/client.js','cordis.patch.yml'])await access(join(directory,file));
+  if(name==='dsh-e2e' && (() => { const [major,minor,patch] = installed.version.split(/[.-]/).map(Number); const rc = installed.version.match(/-rc\.(\d+)/); return major > 0 || minor > 4 || minor === 4 && (patch > 0 || !rc || Number(rc[1]) >= 3); })())for(const file of ['lib/log-worker.mjs','lib/log-storage.mjs','lib/log-package.mjs','lib/log-parser.mjs'])await access(join(directory,file));
   if(name==='dsh-harmony')await access(join(directory,'.harmony-worker/harmony/runtime/worker-entry.js'));
   packages.push({name,version:installed.version,directory,registration:'verified'});
 }

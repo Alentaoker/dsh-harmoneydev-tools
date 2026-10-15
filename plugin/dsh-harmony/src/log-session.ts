@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 export type LogSnapshot = { bundle: string; serial: string; filters: Record<string, unknown>; capturedAt: string; count: number; firstTimestamp?: string; lastTimestamp?: string; dropped: number; evicted: number };
-export const LogSessionContext = createContext<{ sessionId?: string; onOpenLogs?: (id: string) => void; onAnalyze?: (text: string) => void }>({});
+export const LogSessionContext = createContext<{ sessionId?: string; onOpenLogs?: (id?: string) => void; onAnalyze?: (text: string) => void }>({});
 export async function saveSessionLog(file: File, sessionId: string, snapshot: LogSnapshot, signal: AbortSignal) {
   if (!sessionId || !file.size || file.size > 32 * 1024 * 1024) throw Error('请在会话中保存 1 字节～32 MiB 的日志');
   const url = (path: string, params = {}) => '/api/dsh-e2e/log-library/' + path + '?' + new URLSearchParams({ sessionId, ...params });

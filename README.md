@@ -8,7 +8,7 @@
 | plugin | [dshE2E](plugin/dsh-e2e/README.md) | 有明确验收条件的手机任务、报告、流程复用和会话日志工作台 | [使用](plugin/dsh-e2e/USAGE.md) · [安装](plugin/dsh-e2e/INSTALLATION.md) · [AI 安装](plugin/dsh-e2e/AI_INSTALLATION.md) |
 | skill | [hdesign-to-arkts](skill/hdesign-to-arkts/README.md) | 通过 Pixso MCP 确认设计目标、提取属性、映射 SDK 资源，再接续 ArkTS 开发 | [使用](skill/hdesign-to-arkts/USAGE.md) · [安装](skill/hdesign-to-arkts/INSTALLATION.md) · [AI 覆盖安装](skill/hdesign-to-arkts/AI_INSTALLATION.md) · [新旧差异](skill/hdesign-to-arkts/CHANGES.md) |
 
-当前候选配套版本：**dshHarmony 0.5.0-rc.3 + dshE2E 0.4.0-rc.2**，宿主保持 Windows x64 / DSH 0.2.0-rc.2 / Node24。支持会话日志管理、简洁 AI 分析草稿及投屏恢复。手机端投屏进程可能在 DevEco 退出后遗留；面板提供明确确认的“释放占用并重连”，不会自动抢占外部投屏。已实测恢复 H.264 与双订阅共享，范围及遗留见 [验证记录](docs/VALIDATION.md) 和 [恢复计划](docs/VIDEO_RECOVERY_PLAN.md)。
+当前候选配套版本：**dshHarmony 0.5.0-rc.4 + dshE2E 0.4.0-rc.3**，宿主保持 Windows x64 / DSH 0.2.0-rc.2 / Node24。新增临时区、批量导入目录、ZIP/GZ/原厂 HiLog 解析、包名过滤与收藏、路径明确的 AI 分析草稿，以及分块压缩的大文件浏览。实时与离线日志可双向跳转，使用见 [日志工作台](docs/LOG_WORKBENCH.md)。手机端投屏进程可能在 DevEco 退出后遗留；面板提供明确确认的“释放占用并重连”，不会自动抢占外部投屏。已实测恢复 H.264 与双订阅共享，范围及遗留见 [验证记录](docs/VALIDATION.md) 和 [恢复计划](docs/VIDEO_RECOVERY_PLAN.md)。
 
 ## 目录
 

@@ -54,7 +54,7 @@ test('日志页被正文大小缩短后，上一页回到真实起点，不固�
 
 test('日志工作台切换会话后，取消旧读取且迟到文件不会串入新会话',async()=>{
   const h=await harness('library');try{
-    h.render('A',true);const old=h.requests.at(-1);h.render('B',true);assert.equal(old.signal.aborted,true);const current=h.requests.at(-1);
+    h.render('A',true);const old=h.requests.find(r=>r.url.includes('/list?'));h.render('B',true);assert.equal(old.signal.aborted,true);const current=h.requests.find(r=>r.url.includes('/list?')&&r.url.includes('sessionId=B'));
     h.reply(current,{protocolVersion:2,sessionId:'B',files:[{id:'b',sessionId:'B',name:'B独有.log',size:12,count:1}],total:1,nextOffset:null});await tick();
     h.reply(old,{protocolVersion:2,sessionId:'A',files:[{id:'a',sessionId:'A',name:'A独有.log'}],total:1,nextOffset:null});await tick();
     const value=h.text(h.render('B',true));assert.ok(value.includes('B独有.log'));assert.ok(!value.includes('A独有.log'));

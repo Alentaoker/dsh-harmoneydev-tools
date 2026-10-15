@@ -73,7 +73,7 @@ export function apply(ctx) {
   function Panel(props) {
     const info=props.useTabInfo?.(),visible=info?.tab?.visible!==false,sessionId=props.sessionId;
     const [workbench,setWorkbench]=useState(false),[openFileId,setOpenFileId]=useState();
-    useEffect(()=>{const target=sessionStorage.getItem('dshE2E:open-log:'+sessionId);if(target){setOpenFileId(target);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}else setOpenFileId(undefined);
+    useEffect(()=>{const target=sessionStorage.getItem('dshE2E:open-log:'+sessionId);if(target){setOpenFileId(target === '__workbench__' ? undefined : target);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}else setOpenFileId(undefined);
       const open=event=>{if(event.detail?.sessionId===sessionId){setOpenFileId(event.detail.id);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}};window.addEventListener('dshE2E:open-logs',open);return()=>window.removeEventListener('dshE2E:open-logs',open);
     },[sessionId]);
     const [scope,setScope]=useState('session'),[filter,setFilter]=useState(''),[query,setQuery]=useState(''),[offset,setOffset]=useState(0),[archived,setArchived]=useState(false);
@@ -112,7 +112,7 @@ export function apply(ctx) {
     const live=status?.active?.find(r=>r.sessionId===sessionId),elapsed=live?(Date.now()-Date.parse(live.createdAt)):0;
     const artifact=(file,runId=selectedId)=>endpoint('artifact',{id:runId,file});
     const counts=page?.counts||{};
-    if(workbench)return <div className="de2e log-workbench-shell"><div className="row spread heading"><h2>dshE2E · 会话日志</h2><button onClick={()=>setWorkbench(false)}>测试工作台</button></div><LogWorkbench visible={visible} sessionId={sessionId} openFileId={openFileId} onDraft={text=>{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话');appendLogDraft(ctx.conversation.input.for(session),text);}}/></div>;
+    if(workbench)return <div className="de2e log-workbench-shell"><div className="row spread heading"><h2>dshE2E · 会话日志</h2><div className="row"><button onClick={()=>{sessionStorage.setItem('dshHarmony:open-logs:'+sessionId,'1');ctx.sidebarRight.openTabIn(sessionId,'dshHarmony');window.dispatchEvent(new CustomEvent('dshHarmony:open-logs',{detail:{sessionId}}));}}>实时日志</button><button onClick={()=>setWorkbench(false)}>测试工作台</button></div></div><LogWorkbench visible={visible} sessionId={sessionId} openFileId={openFileId} onDraft={text=>{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话');appendLogDraft(ctx.conversation.input.for(session),text);}}/></div>;
     return <div className="de2e">
       <div className="row spread heading"><div><h2>dshE2E</h2><div className="muted">鸿蒙测试工作台 · {status?.version||pluginVersion}</div></div><div className="row"><button onClick={()=>setWorkbench(true)}>日志工作台</button><button onClick={()=>setTick(t=>t+1)} aria-label="刷新测试记录">刷新</button><button className="primary" disabled={!sessionId} onClick={()=>{setForm({});setSelectedId(undefined);}}>新建测试</button></div></div>
       {!sessionId?<div className="empty">打开一个会话后，可查看该会话的测试和报告。</div>:<>

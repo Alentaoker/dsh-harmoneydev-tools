@@ -48,7 +48,7 @@ test('日志保留上限、正文分页和级别过滤有效，密钥不会交�
   const page = logPage(f.job, { level: 'error', limit: 2 });
   assert.equal(page.filteredTotal, 500); assert.equal(page.nextOffset, 2); assert.equal(page.entries.length, 2);
   assert.equal(JSON.stringify(page).includes('private-value'), false); assert.equal(JSON.stringify(page).includes('TEST-SERIAL'), false);
-  assert.throws(() => logPage(f.job, { offset: -1 }), /分页/); assert.throws(() => logPage(f.job, { limit: 300 }), /分页/);
+  assert.throws(() => logPage(f.job, { offset: -1 }), /分页/); assert.throws(() => logPage(f.job, { limit: 1001 }), /分页/);
   assert.equal(redactLog('password="some password"'), 'password=[redacted]');
   const now = Date.UTC(2027, 0, 1); assert.ok(logTime('01-01 00:00:01', now) > logTime('12-31 23:59:59', now));
 });
