@@ -10,6 +10,8 @@
 
 当前候选配套版本：**dshHarmony 0.5.0-rc.4 + dshE2E 0.4.0-rc.3**，宿主保持 Windows x64 / DSH 0.2.0-rc.2 / Node24。新增临时区、批量导入目录、ZIP/GZ/原厂 HiLog 解析、包名过滤与收藏、路径明确的 AI 分析草稿，以及分块压缩的大文件浏览。实时与离线日志可双向跳转，使用见 [日志工作台](docs/LOG_WORKBENCH.md)。手机端投屏进程可能在 DevEco 退出后遗留；面板提供明确确认的“释放占用并重连”，不会自动抢占外部投屏。已实测恢复 H.264 与双订阅共享，范围及遗留见 [验证记录](docs/VALIDATION.md) 和 [恢复计划](docs/VIDEO_RECOVERY_PLAN.md)。
 
+本版同时修复设备设置保存返回 404 和 HDC 初始化失败后无法恢复的问题；日志工作台采用左侧目录、紧凑筛选、可选列及行距，正文自动填满剩余空间。[下载当前候选版](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.4-e2e-0.4.0-rc.3) · [交给 AI 安装](docs/AI_INSTALLATION.md) · [升级与回退](docs/AI_UPGRADE.md)。私有发行文件需要使用有权访问仓库的账号下载，源码包仍需 Node24 与联网安装依赖。
+
 ## 目录
 
 ```text
