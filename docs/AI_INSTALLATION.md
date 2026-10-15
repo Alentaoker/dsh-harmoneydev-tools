@@ -8,7 +8,7 @@
 
 ## 支持边界
 
-当前源码候选版本是 **dshHarmony 0.5.0-rc.4 + dshE2E 0.4.0-rc.3**，保持宿主 **0.2.0-rc.2**。各层验收与未测范围见 [验证记录](VALIDATION.md)。稳定版本为 0.4.3/0.3.1。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
+当前源码候选版本是 **dshHarmony 0.5.0-rc.4 + dshE2E 0.4.0-rc.3**，当前发行修订为 **r2**，精确 tag 为 `v0.5.0-rc.4-e2e-0.4.0-rc.3-r2`，保持宿主 **0.2.0-rc.2**。r2 更新安装包完整性、版本表与安装说明，不改变插件运行源码或日志格式。各层验收与未测范围见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
 
 | 项目 | 要求 |
 |---|---|
@@ -16,10 +16,10 @@
 | DSH 宿主 | 精确验证目标 `0.2.0-rc.2`；安装预检拒绝其它版本，需单独迁移验证 |
 | 构建 / E2E 运行时 | 真正的 Node.js 24；Electron 可执行文件不能代替 E2E 子进程 Node |
 | 构建依赖 | npm、联网下载 lockfile 中的依赖；源码安装还需 Git，ZIP 安装不需要 Git |
-| 手机 | 启用调试、已授权、HDC 在线；具备所需系统权限 |
+| 手机 | 仅设备功能需要；启用调试、已授权、HDC 在线，具备所需系统权限 |
 | HDC | 外部 `hdc.exe` 与 USB 驱动，可用 DevEco SDK 提供的工具；目录任意 |
 | 视频 | 私有发行资源含 ARM64 手机原生 H.264 扩展，无需 DevEco Testing 或 Java；设备系统库兼容仍需实测 |
-| 模型 | DSH 已配置可用模型；用户密钥不包含在发行包中 |
+| 模型 | 仅 AI 操控、测试和发送分析时需要；离线导入/浏览不需要模型。用户密钥不包含在发行包中 |
 
 原生视频资源缺失时预检明确提示，截图和其它工具仍可使用；资源存在但哈希不匹配会在安装前停止。不要跨电脑复制登录状态、序列号、签名、密钥或整个数据目录。
 
@@ -39,6 +39,19 @@
 
 - 源码：从已授权私有仓库获取明确 tag/SHA；脏工作树更新前保留变化，不盲目 `git pull`。
 - ZIP：下载私有 Release 的 `*-windows-source.zip` 与 `.sha256`，用 `Get-FileHash -Algorithm SHA256` 比较，解压到**长期保留的安装来源目录**。内置 `release-manifest.json` 每文件哈希，预检再次核对。源文件发行仍需联网获取依赖和构建，不是完全离线安装包。
+
+r2 文件名含 `-r2-windows-source.zip`。使用有权访问仓库的账号、连接器或已登录 GitHub CLI 下载；遇到登录问题交由用户完成，不提取浏览器 cookie 或打印令牌。核对 `.sha256` 中的文件名与实际 ZIP 相符，不能用旧版校验文件验证新包。安装前可调整解压目录名称；正式登记后它是持久来源，移动/删除会破坏路径依赖，需要退出宿主后重新登记。
+
+例如在下载目录校验 r2 包：
+
+```powershell
+$installArchive = '.\dsh-harmony-0.5.0-rc.4-e2e-0.4.0-rc.3-r2-windows-source.zip'
+$installExpectedHash = ((Get-Content -LiteralPath ($installArchive + '.sha256') -Raw).Trim() -split '\s+')[0]
+if ($installExpectedHash -notmatch '^[a-fA-F0-9]{64}$' -or
+    (Get-FileHash -LiteralPath $installArchive -Algorithm SHA256).Hash -ne $installExpectedHash) {
+  throw 'Release checksum mismatch'
+}
+```
 
 路径由用户环境提供，不假设 E 盘、用户名、原始 Piora 工程或 DevEco 安装目录。
 

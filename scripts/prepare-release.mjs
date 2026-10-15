@@ -1,6 +1,7 @@
 import { readdir, readFile, writeFile, mkdir, copyFile, lstat } from 'node:fs/promises';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
+import { includeReleaseFile } from './release-files.mjs';
 const root=resolve(import.meta.dirname,'..'), output=resolve(process.argv[2]||'');
 if(!process.argv[2])throw Error('Supply a new, empty staging directory.');
 const rel=relative(root,output);
@@ -8,7 +9,6 @@ if(!rel||(!rel.startsWith('..')&&!isAbsolute(rel)))throw Error('Stage outside th
 if(await lstat(output).then(()=>true,e=>{if(e.code==='ENOENT')return false;throw e;}))throw Error('Staging directory already exists; nothing is overwritten.');
 const deniedDirectories=new Set(['node_modules','__pycache__','.git','artifacts','backups','.e2e','lib','.harmony-worker','oh_modules','.hvigor','.signing','signing']);
 // Runtime lib code under vendor is SOURCE; only top-level built plugin lib is excluded.
-const deniedFiles=/^(?:native-inputs\.json|client-inputs\.json|routes\.ts|local\.properties)$|(?:\.pyc|\.log|\.p12|\.p7b|\.cer|\.pem|\.key)$/i;
 const files=[];
 async function copyTree(source,target,pluginDepth=0){
   for(const entry of await readdir(source,{withFileTypes:true})){
@@ -17,7 +17,7 @@ async function copyTree(source,target,pluginDepth=0){
     if(entry.isDirectory()){
       await mkdir(join(target,entry.name),{recursive:true});await copyTree(join(source,entry.name),join(target,entry.name),pluginDepth+1);
     }else if(entry.isFile()){
-      if(deniedFiles.test(entry.name)||entry.name.startsWith('.env')||(entry.name.startsWith('session')&&!entry.name.endsWith('.test.mjs')))continue;
+      if(!includeReleaseFile(entry.name))continue;
       await copyFile(join(source,entry.name),join(target,entry.name));
       files.push({path:relative(output,join(target,entry.name)).replaceAll('\\','/'),sha256:createHash('sha256').update(await readFile(join(target,entry.name))).digest('hex')});
     }

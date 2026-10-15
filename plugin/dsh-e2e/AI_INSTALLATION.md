@@ -1,5 +1,7 @@
 # 让 AI 安装或升级 dshE2E
 
+本次配套版本为 dshHarmony 0.5.0-rc.4 / dshE2E 0.4.0-rc.3，发行修订 r2，tag `v0.5.0-rc.4-e2e-0.4.0-rc.3-r2`。不使用裸 latest，也不复制旧电脑 DataHome。
+
 把下面这段交给有权访问本机与私有仓库的 AI，并填写版本和路径：
 
 > 请从 Alentaoker/dsh-harmoneydev-tools 的指定提交或 tag 安装/升级 dshE2E 及其配套插件。先读取本目录 INSTALLATION.md 和仓库 docs/AI_INSTALLATION.md。确认 DSH 0.2.0-rc.2、Node 24、实际 DSH_HOME、目标 profile 与插件版本；备份原登记并保留旧来源。使用新 plugin/ 路径执行只读预检，构建两个插件后通过正式 CLI 登记，再用相同环境冷启动。保留其他插件、模型、会话和本地数据；失败按备份恢复本次改动。分别报告文件登记、宿主启用、设备功能哪些完成、哪些未做。不要顺带安装 skill、升级 DSH 宿主或改兼容豁免。

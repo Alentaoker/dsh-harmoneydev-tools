@@ -1,70 +1,64 @@
 # 安装与更新
 
-适配 Windows、Node 24、DSH Desktop 0.2.0-rc.2。开始前先运行一次 DSH，让目标 profile 初始化；退出 DSH 后安装。新版宿主的 API 和预设需要另外验证。
+当前配套插件：dshHarmony 0.5.0-rc.4 / dshE2E 0.4.0-rc.3；发行修订 r2。支持边界为 Windows x64、DSH 0.2.0-rc.2、真正的 Node.js 24 和 npm。下载的源码包仍需联网获取依赖，不包含用户配置、SDK 或驱动。详细流程见 [AI 安装指南](AI_INSTALLATION.md)，本机独立安装证据见 [可移植性记录](PORTABILITY.md)。
 
-## 手动安装
+## 准备
 
-在仓库根目录运行：
+1. 从有访问权限的私有 Release 下载精确 r2 ZIP 和同名 `.sha256`，校验后解压到长期保留的来源目录。安装后不能直接删除或移动它。
+2. 确认实际桌面 EXE、CLI、Node/npm 路径和原数据目录。不要照抄其它电脑的盘符或用户名。
+3. 目标 profile 需先由官方宿主初始化。全新桌面安装先在指定 `DSH_HOME` 下启动一次，再正常退出；已有环境直接使用原目录。
+4. 结束设备任务、录像，完整退出目标宿主。`desktop` 和 `web` 分别登记，同一数据目录不代表两个 profile 已同步安装。
 
-```powershell
-npm --prefix plugin/dsh-harmony ci --legacy-peer-deps
-npm --prefix plugin/dsh-harmony run build
-npm --prefix plugin/dsh-e2e ci --legacy-peer-deps
-npm --prefix plugin/dsh-e2e run build
+## 桌面安装
 
-$env:DSH_HOME = 'E:\DeepSeekHarness\Data'
-$dshCliPath = 'E:\DeepSeekHarness\App\resources\runtime\cli\bin\dsh.cmd'
-& $dshCliPath plugin --profile desktop add (Resolve-Path 'plugin/dsh-harmony').Path
-& $dshCliPath plugin --profile desktop add (Resolve-Path 'plugin/dsh-e2e').Path
-node scripts/register-bundles.mjs "$env:DSH_HOME/profiles/desktop/package.json"
-```
-
-先 Harmony，后 E2E。四种 Agent 预设的兼容补丁基于 rc.2；E2E 的补丁保留 Harmony 的完整预设，再追加自身工具。不要改成只覆盖一个工具的残缺预设。
-
-`scripts/install.ps1` 自动执行上述步骤并备份 profile 的配置、包清单和锁文件。备份在 `$DSH_HOME/backups/dsh-harmony-e2e-<time>`，不复制密钥、完整会话或其他数据。安装中途失败时停止，不继续启动。检查提示并依据备份人工恢复，不删用户数据目录。
-
-默认终端 Node 不是 24 时，显式传入 `-NodeExe` 和 `-NpmCli`（npm 的 `bin/npm-cli.js`）；安装脚本使用指定 Node 运行 npm，并将该 Node 加入子进程路径，退出时恢复当前终端的 PATH 和 DSH_HOME。完整示例及 Agent 验收清单见 [AI 安装指南](AI_INSTALLATION.md)。
-
-## 启动目录
-
-只在某个终端设置环境变量，不会影响此前已运行的桌面进程，也不会永久改变桌面快捷方式。
+在解压后的仓库根目录运行，替换为自己的路径：
 
 ```powershell
-.\scripts\start-desktop.ps1 -DshExe 'E:\DeepSeekHarness\App\DeepSeek Harness.exe' `
-  -DataHome 'E:\DeepSeekHarness\Data'
+$installDshExe = 'C:\Program Files\DeepSeek Harness\DeepSeek Harness.exe'
+$installDataHome = Join-Path $env:USERPROFILE '.dsh' # 已确认要使用的数据目录
+.\scripts\install.ps1 -DshExe $installDshExe `
+  -DataHome $installDataHome -DshProfile desktop -PlanOnly
 ```
 
-把这个启动脚本用作今后的桌面入口，或者让原启动入口显式设置相同 `DSH_HOME`。若默认快捷方式仍打开 C 盘环境，将看到另一套插件和供应商。目录差异不能通过更换端口解决。
+核对输出的宿主版本、Node24、DataHome、profile、插件版本、文件哈希与视频资源。全部正确且宿主已退出后，去掉 `-PlanOnly` 执行同一命令：
 
-E2E 优先使用宿主随附的 Node；安装结构不同时可给启动脚本传 `-E2ENode '完整的node.exe路径'`，它设置 `DSH_E2E_NODE_PATH`。该运行时须为 Node 24。
+```powershell
+.\scripts\install.ps1 -DshExe $installDshExe `
+  -DataHome $installDataHome -DshProfile desktop
+.\scripts\start-desktop.ps1 -DshExe $installDshExe -DataHome $installDataHome
+```
+
+Node/npm 自动发现不足时，在两次安装命令中都显式传 `-NodeExe '实际的node.exe'`、`-NpmCli '实际的npm-cli.js'`；启动脚本相应传 `-E2ENode '同一个node.exe'`。不要用 Electron EXE 代替 Node，也不要直接用版本不明的终端 `npm` 构建。安装脚本固定通过所选 Node24 运行 npm，并为构建子进程设置 PATH。
+
+脚本先备份 profile 的包清单、锁、composition 和兼容配置，再分别安装依赖、构建两包；都成功后才通过正式 CLI 添加 Harmony、E2E，增量补齐 bundle 并运行 `verify-install.mjs`。失败立即停止，保留原来源和数据。预检、登记和冷启动分别判断，不能仅凭版本号或 HTTP 200 宣称手机功能通过。
 
 ## 网页版
 
-依次把两个插件安装到 `web` profile 后启动：
+使用同一数据目录的 `web` profile；若它尚未初始化，官方 rc.2 CLI 的帮助命令可创建默认模板后退出：
 
 ```powershell
-$env:DSH_HOME = 'E:\DeepSeekHarness\Data'
-& $dshCliPath plugin --profile web add (Resolve-Path 'plugin/dsh-harmony').Path
-& $dshCliPath plugin --profile web add (Resolve-Path 'plugin/dsh-e2e').Path
-node scripts/register-bundles.mjs "$env:DSH_HOME/profiles/web/package.json"
-& $dshCliPath web
+$installDshCli = '实际的\dsh.cmd'
+if (-not $installDataHome) { throw 'Set installDataHome to the confirmed data directory first.' }
+$env:DSH_HOME = $installDataHome
+& $installDshCli web --help
+.\scripts\install.ps1 -DshCli $installDshCli -DataHome $installDataHome `
+  -DshProfile web -NodeExe '实际的node.exe' -NpmCli '实际的npm-cli.js' -PlanOnly
+# 核对后去掉 -PlanOnly 安装，再启动
+.\scripts\start-web.ps1 -DshCli $installDshCli `
+  -DataHome $installDataHome -NodeExe '实际的node.exe'
 ```
 
-同一手机的控制权只能由一个实例持有。遇到占用时先结束另一实例的操作，不并行运行两个实机测试。
+网页认证由用户正常完成。401/403 只能证明未认证请求被拒绝，不能证明认证后的插件 UI/API 已验收。同一手机的操作权限仍需遵守租约，避免同时运行两个实机任务。
 
-## 首次连接
+## 首次使用与验证
 
-1. 手机连接 USB、启用调试，在手机上完成授权，保持解锁。
-2. DevEco 的 `hdc list targets` 应列出具体在线设备；Windows USB 驱动异常需先修复。
-3. DSH 会话顶部打开 dshHarmony，设备设置选择 DevEco SDK 的 `hdc.exe`，刷新。
-4. 给会话选择可用模型，打开 dshE2E，要求测试一个具体流程并给出明确验收条件。
-5. 测试结束检查“界面结果”和“日志状态”，读取正文，而不是只查看日志条数。
+- **离线日志**：不需手机或模型。导入明文或文本 GZ，检查目录/临时区、100/500/1000 条分页、搜索、包名、TAG 和详情。AI 分析先生成草稿，发送才进入模型流程。
+- **设备与投屏**：另需本机 HDC、USB 驱动、手机调试授权。`hdc list targets -v` 需显示具体设备 `USB Connected`，`UART Ready` 不算手机在线。在设备设置选择并保存本机 `hdc.exe`，核对路径落盘并在重启后保留。视频扩展内嵌于私有包，无需 DevEco Testing/Java；设备兼容仍需验证。锁屏预览不代表 H.264 流通过。
+- **原厂二进制 HiLog**：另需 SDK 的 `hilogtool` 与该批日志的配套字典；普通明文、ZIP 和文本 GZ 不需要它。缺工具或字典时保留原包，补充后重试。
+- **AI/E2E**：配置本机可用模型，给出具体目标和验收条件；检查运行、断言、报告、日志状态与控制释放，不能只看条数。
 
-6. 面板默认按会话隔离；旧记录可从“全部会话历史”只读查看。新建和复测按钮生成会话草稿，检查后发送才执行。使用路径见 [工作台指南](PANEL.md)。
+## 更新与回退
 
-## 更新
+优先把新的已校验源码包放在新来源目录，保留旧来源；退出目标宿主后执行预检、安装和同环境冷启动。不要在宿主运行时覆盖其来源，也不要为了更新删除 `DSH_HOME`。只在某个终端设置变量不会改变已经运行的桌面；应通过提供的启动脚本固定数据目录。
 
-退出宿主，在同一源码目录执行 `git pull --ff-only`，重新执行安装脚本，再用相同数据目录启动。不要为了更新删除 `$DSH_HOME`；它包含会话、供应商和配置。
-
-本机终端、设备 Shell、签名安装等高级功能还依赖宿主或 SDK 的原生运行时。普通界面操作、截图和 E2E 不要求编译或安装投屏 HAP。
-
+回退通过同一正式 CLI 重新登记旧来源，恢复本次拥有的配置字段并冷启动，保留其它插件与模型。新日志格式回退旧插件前另需日志库备份，详见 [AI 升级与回退](AI_UPGRADE.md)。根安装脚本不安装 `skill/`、Pixso MCP 或升级 DSH 宿主。
