@@ -131,11 +131,11 @@ test('unauthenticated loopback connections cannot attach to or stop a shared sou
 test('source rejection retains contention metadata for every subscriber and permits recovery',async t=>{
  const f=await fixture(t);const original=f.options.openSource;
  f.options.openSource=async()=>{await pause(20);throw new HarmonyError('DEVICE_BUSY','DevEco projection busy',
-  {retryable:true,details:{reason:'native-video-conflict',source:'deveco',devicePid:51811,token:'never-relay',privatePath:'never-relay'}});};
+   {retryable:true,details:{reason:'native-video-conflict',source:'deveco',devicePid:51811,extension:'libscreen_casting.z.so',deviceStartTime:'22351072',token:'never-relay',privatePath:'never-relay'}});};
  const rejected=await Promise.allSettled([f.open(),f.open()]);
  for(const result of rejected){assert.equal(result.status,'rejected');const e=result.reason;
   assert.equal(e.code,'DEVICE_BUSY');assert.equal(e.retryable,true);
-  assert.deepEqual(e.details,{reason:'native-video-conflict',source:'deveco',devicePid:51811});
+   assert.deepEqual(e.details,{reason:'native-video-conflict',source:'deveco',devicePid:51811,extension:'libscreen_casting.z.so',deviceStartTime:'22351072'});
  }
  await pause(40);f.options.openSource=original;const c=await bounded(f.open());assert.equal(f.starts,1);await c.close();
 });

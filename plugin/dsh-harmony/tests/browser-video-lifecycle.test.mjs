@@ -168,7 +168,7 @@ test('external video contention stays identifiable with low-rate preview and ret
     if (url.startsWith('/api/harmony/video?')) {
       videoRequests += 1;
       if (videoRequests === 1) return {ok:false,status:409,json:async()=>({error:{code:'DEVICE_BUSY',message:'busy',
-        details:{reason:'native-video-conflict',source:'deveco',devicePid:51811}}})};
+        details:{reason:'native-video-conflict',source:'deveco',devicePid:51811,extension:'libscreen_casting.z.so',deviceStartTime:'22351072'}}})};
       return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')),{once:true}));
     }
     if (url.startsWith('/api/harmony/geometry?')) return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'preview'}})};
@@ -182,8 +182,11 @@ test('external video contention stays identifiable with low-rate preview and ret
     h.flush();await settle();const state=h.flush();
     assert.equal(state.videoBlocked,true);assert.equal(state.mode,'frames');assert.equal(state.status,'live');
     assert.match(state.fallbackReason,/DevEco.*51811/);assert.equal(frameRequests,1);
+    assert.deepEqual(state.videoRecovery,{devicePid:51811,extension:'libscreen_casting.z.so',deviceStartTime:'22351072'});
     const entry=[...h.timers].find(([,timer])=>timer.delay===1500);assert.ok(entry,'busy preview uses a 1.5s delay');
     h.advance(11000);h.timers.delete(entry[0]);entry[1].fn();await settle();
     assert.equal(videoRequests,2,'release is probed without a manual refresh');assert.equal(frameRequests,1);
+    const probing=h.flush();assert.equal(probing.videoRecovery,undefined);assert.equal(probing.videoBlocked,false);
+    assert.doesNotMatch(probing.fallbackReason,/51811/,'a stale PID is cleared during the next probe');
   } finally {await h.dispose();}
 });

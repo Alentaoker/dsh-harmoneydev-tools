@@ -6,6 +6,20 @@ import path from 'node:path';
 const file=new URL(`./.static-geometry-${process.pid}.mjs`,import.meta.url);
 const output=await build({entryPoints:['vendor/lib/harmony/device-manager.ts'],bundle:true,format:'esm',platform:'node',packages:'external',write:false,alias:{'@earendil-works/pi-ai':path.resolve('src/pi-ai.ts'),'@earendil-works/pi-coding-agent':path.resolve('src/pi-sdk.ts')},plugins:[{name:'unused-session-reader-test-boundary',setup(b){b.onLoad({filter:/src[\\/]pi-sdk\.ts$/},async args=>({contents:(await readFile(args.path,'utf8'))+'\nexport const SessionManager={open(){throw Error("Session reading is outside this geometry test")}};export function buildContextEntries(){throw Error("Session reading is outside this geometry test")}',loader:'ts',resolveDir:path.dirname(args.path)}));}}]});
 await writeFile(file,output.outputFiles[0].contents);const {HarmonyDeviceManager}=await import(file.href);test.after(()=>rm(file,{force:true}));
+test('video recovery requires an explicitly confirmed manual lease before reaching the backend',async()=>{
+ let releases=0;
+ const manager=new HarmonyDeviceManager({backend:{kind:'test',hdcPath:'test',listDevices:async()=>[{serial:'TEST-RECOVERY',state:'online',capabilities:{}}],releaseVideoConflict:async()=>{releases++;}}});
+ const options={serial:'TEST-RECOVERY',confirmed:true,expected:{devicePid:51811,extension:'libscreen_casting.z.so',deviceStartTime:'22351072'}};
+ try{
+  const agent=await manager.acquireLease({serial:options.serial,owner:{kind:'agent',id:'ai'}});
+  await assert.rejects(manager.releaseVideoConflict({...options,leaseToken:agent.token}),e=>e.code==='INVALID_ARGUMENT');
+  manager.releaseLease(agent.token);
+  const manual=await manager.acquireLease({serial:options.serial,owner:{kind:'manual',id:'panel'}});
+  await assert.rejects(manager.releaseVideoConflict({...options,confirmed:false,leaseToken:manual.token}),e=>e.code==='INVALID_ARGUMENT');
+  assert.equal(releases,0);
+  await manager.releaseVideoConflict({...options,leaseToken:manual.token});assert.equal(releases,1);
+ }finally{await manager.dispose();}
+});
 test('agent handoff replaces the token only for the exact active owner in the same session',async()=>{
  const backend={kind:'test',hdcPath:'test',listDevices:async()=>[{serial:'TEST-HANDOFF',state:'online',capabilities:{}}],dispose:async()=>{}};
  const manager=new HarmonyDeviceManager({backend});

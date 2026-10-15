@@ -107,6 +107,10 @@ export class HybridHarmonyBackend implements HarmonyAutomationBackend {
     return await this.hdc.stopRecording(serial, remoteName, destinationPath, signal);
   }
 
+  async releaseVideoConflict(serial:string, expected:import('./native-video-conflict').NativeVideoRecovery, signal?:AbortSignal):Promise<void> {
+    await this.hdc.releaseVideoConflict(serial,expected,signal);
+  }
+
   async openVideoStream(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection> {
     return await this.hdc.openVideoStream(serial, signal,async(sourceSignal)=>{
       try{if(await this.hypium.waitForIdle(serial,100,2000,sourceSignal))return true;}

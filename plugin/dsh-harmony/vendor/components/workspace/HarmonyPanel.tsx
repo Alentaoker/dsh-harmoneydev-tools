@@ -309,6 +309,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     error: frameLoadError,
     fallbackReason: frameFallbackReason,
     videoBlocked: frameVideoBlocked,
+    videoRecovery: frameVideoRecovery,
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
     active: active && desktopAvailable,
@@ -564,6 +565,18 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     if (errorPurpose === "mirror-initialization") { setError(null); setErrorPurpose(null); }
     setMediaNotice({ purpose: "mirror-initialization", message: copy("正在连接实时视频。连接成功后，画面上方会显示“实时视频流”。", "Connecting live video. A successful connection shows Live video above the image.") });
     requestFrame();
+  };
+  const releaseVideoConflict = () => {
+    if(!frameVideoRecovery||!selectedSerial||!canControl)return;
+    const expected=frameVideoRecovery;
+    if(!window.confirm(copy(`将停止手机上设备 PID ${expected.devicePid} 的投屏。其他软件若仍在观看会断开；不会关闭软件、清除日志或停止其他设备。确认释放并重新连接？`,
+      `Stop video process ${expected.devicePid} on this phone? Other viewers of that process will disconnect. Apps, logs and other devices are unaffected. Release and reconnect?`)))return;
+    void run(async()=>{
+      const leaseToken=await ensureControl();
+      await jsonRequest('/api/harmony/video',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'release-conflict',serial:selectedSerial,leaseToken,confirmed:true,expected})});
+      requestFrame();
+    });
   };
   const mediaAction = useCallback((mediaActionName: "capture_screenshot" | "start_recording" | "stop_recording") => {
     if (!selectedSerial) return;
@@ -839,6 +852,8 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
         {selectedOnline && frameMode === "frames" && (frameStatus === "live" || frameVideoBlocked) ? <div className={styles.frameVideoActions}>
           {!liveFrame?.initialPreview?<button className={styles.frameVideoSetup} type="button" disabled={busy}
             onClick={connectLiveVideo}>{frameVideoBlocked ? copy("重试实时视频", "Retry live video") : copy("接入实时视频", "Connect live video")}</button>:null}
+          {frameVideoBlocked && frameVideoRecovery ? <button className={styles.frameVideoSetup} type="button" disabled={busy||!canControl}
+            onClick={releaseVideoConflict}>{copy('释放占用并重连','Release video and reconnect')}</button>:null}
           {frameFallbackReason ? <small data-video-fallback-reason title={frameFallbackReason}>{frameFallbackReason}</small> : null}
         </div> : null}
         {selectedOnline ? <canvas

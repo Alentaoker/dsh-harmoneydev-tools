@@ -8,7 +8,7 @@ import { HarmonyError } from './errors';
 import { HosVideoPacketizer } from './media/hos-packets';
 import type { HarmonyVideoConnection } from './types';
 import { acquireDeviceLock, sharedDeviceLockDirectory } from './runtime/device-lock';
-import { nativeVideoConflicts, nativeVideoConflictError } from './native-video-conflict';
+import { nativeVideoConflicts, nativeVideoConflictError, nativeVideoStartTime } from './native-video-conflict';
 
 const ENDPOINT='localabstract:scrcpy_grpc_socket';
 const active=new Set<string>();
@@ -121,7 +121,10 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   stats.resourceName=resource.resourceName;stats.resourceSha256=resource.hash;
   const existing=await command(['shell','ps -ef'],'native_video_existing',signal);
   const conflicts=nativeVideoConflicts(existing);
-  if(conflicts.length) throw nativeVideoConflictError(conflicts);
+  if(conflicts.length) {
+   const stat=await command(['shell',`cat /proc/${conflicts[0].devicePid}/stat`],'native_video_conflict_identity',signal).catch(()=> '');
+   throw nativeVideoConflictError(conflicts,nativeVideoStartTime(stat));
+  }
   // Establish the reusable UI agent before the encoder; never initialize it
   // over an active stream, because UiDriver.connect may restart uitest.
   const automationReady=await options.prepareAutomation?.(signal);if(automationReady!==undefined)stats.automationReady=automationReady;

@@ -1,5 +1,6 @@
 /** Preserve the server's control state so the workbench can explain a rejected request. */
 export class HarmonyRequestError extends Error {
+  readonly videoRecovery?: import('./native-video-conflict').NativeVideoRecovery;
   readonly code?: string;
   readonly controlStatus?: "stopping" | "recovering";
   readonly signatureRejected: boolean;
@@ -11,7 +12,7 @@ export class HarmonyRequestError extends Error {
   private readonly reason?: string;
 
   constructor(value: unknown, status: number) {
-    const error = value && typeof value === "object" ? value as { code?: unknown; message?: unknown; details?: { state?: unknown; reason?: unknown; deviceErrorCode?: unknown; ownerPid?: unknown; source?: unknown; devicePid?: unknown } } : undefined;
+    const error = value && typeof value === "object" ? value as { code?: unknown; message?: unknown; details?: { state?: unknown; reason?: unknown; deviceErrorCode?: unknown; ownerPid?: unknown; source?: unknown; devicePid?: unknown; extension?:unknown; deviceStartTime?:unknown } } : undefined;
     super(typeof value === "string" ? value : typeof error?.message === "string" ? error.message : `Request failed (${status})`);
     this.code = typeof error?.code === "string" ? error.code : undefined;
     this.reason = typeof error?.details?.reason === "string" ? error.details.reason : undefined;
@@ -19,6 +20,10 @@ export class HarmonyRequestError extends Error {
       || this.message === 'Stop the other live video projection before opening this stream';
     this.videoSource = typeof error?.details?.source === 'string' ? error.details.source : undefined;
     this.videoDevicePid = Number.isSafeInteger(error?.details?.devicePid) ? error?.details?.devicePid as number : undefined;
+    const {extension,deviceStartTime}=error?.details??{};
+    if(this.videoBlocked && this.reason==='native-video-conflict' && this.videoDevicePid && this.videoDevicePid>0
+      && typeof extension==='string' && /^lib(?:screen_casting|scrcpy)[A-Za-z0-9_.-]*\.so$/.test(extension)
+      && typeof deviceStartTime==='string' && /^\d{1,20}$/.test(deviceStartTime))this.videoRecovery={devicePid:this.videoDevicePid,extension,deviceStartTime};
     this.ownedByAnotherInstance = error?.code === "DEVICE_BUSY" && Number.isSafeInteger(error.details?.ownerPid) && (error.details?.ownerPid as number) > 0;
     this.signatureRejected = error?.code === "COMMAND_FAILED" && error.details?.reason === "signature-rejected";
     this.deviceErrorCode = typeof error?.details?.deviceErrorCode === "string" && /^\d{1,12}$/.test(error.details.deviceErrorCode)
@@ -32,8 +37,8 @@ export class HarmonyRequestError extends Error {
     if (this.videoBlocked && this.reason !== 'shared-video-unreachable') {
       const owner = this.videoSource === 'deveco' ? 'DevEco' : this.videoSource === 'dsh-untracked' ? (chinese ? '未登记的 DSH' : 'untracked DSH') : (chinese ? '其他软件' : 'another application');
       const pid = this.videoDevicePid ? (chinese ? `（设备 PID ${this.videoDevicePid}）` : ` (device PID ${this.videoDevicePid})`) : '';
-      return chinese ? `${owner}投屏进程占用了设备视频通道${pid}。请关闭该软件的设备投屏；释放后本页会自动重连，也可点击“重试实时视频”。`
-        : `${owner} is using the device video channel${pid}. Close its device projection. This page reconnects automatically after release; you can also select Retry live video.`;
+      return chinese ? `手机上仍有${owner}来源的投屏进程${pid}，电脑软件退出后也可能遗留。请先关闭其投屏；确认不再使用时，可释放占用并重连。`
+        : `A ${owner} video process remains on the phone${pid}, possibly after the desktop app exited. Close its projection, or explicitly release it when no longer needed.`;
     }
     if (this.reason === 'shared-video-unreachable') return this.message;
     if (["mirror-release-resources-missing", "mirror-release-resources-invalid", "mirror-device-api-incompatible", "mirror-device-api-unknown"].includes(this.reason ?? "")) return this.message;

@@ -476,6 +476,7 @@ export interface HarmonyAutomationBackend {
   startRecording?(serial: string, remoteName: string, signal?: AbortSignal, onFailure?: (error: import("./errors").HarmonyError) => void): Promise<void>;
   stopRecording?(serial: string, remoteName: string, destinationPath: string, signal?: AbortSignal): Promise<number>;
   openVideoStream?(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection>;
+  releaseVideoConflict?(serial:string, expected:import('./native-video-conflict').NativeVideoRecovery, signal?:AbortSignal):Promise<void>;
   mirrorPackagePath?(): string;
   displayGeometry?(serial: string, signal?: AbortSignal): Promise<import("./observation/geometry").NativeDisplayGeometry>;
   initializeMirror?(serial: string, hapPath: string, signal?: AbortSignal): Promise<void>;

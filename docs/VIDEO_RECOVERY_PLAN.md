@@ -2,6 +2,18 @@
 
 日期：2026-10-15。优先级 P0；保留之前的日志验收遗留。
 
+## rc.3 实机补查与恢复
+
+本次 Windows 没有 DevEco/Java 进程，手机却保留 `libscreen_casting.z.so` 的设备 PID 51811、PPID 1，以及 `@scrcpy_grpc_socket`。HDC 没有该通道的转发记录。这说明桌面软件退出并不保证设备投屏进程结束，原提示把“组件来源”说成“软件仍在运行”不准确。中途 USB Offline 时停止设备验收，用户重新连接后继续。
+
+加入“释放占用并重连”：用户明确确认且持有手动控制租约时，重新检查准确 PID、扩展参数和内核 starttime。发停止信号前在设备侧再核实，PID 复用或身份变化不清理。自动重连与 AI 工具不调用此操作。普通 SIGTERM 在本机返回 Permission denied，但同一准确进程的 SIGKILL 成功；两者均拒绝时报告权限限制，不伪报已恢复。量产系统没有 awk/tr，恢复脚本只用已验证的 shell 内建、cat、ps 和 grep。
+
+释放后实机接收真实 H.264 636×1430：首订阅收到 6 个 picture packet，晚订阅收到 8 个；两订阅只存在一路 DSH 编码器，关闭首订阅后晚订阅保持 live，最后退出后无 DSH 投屏进程，清理状态 complete。这是传输层证据，不把 picture packet 数字当成浏览器显示帧率。
+
+进一步试验：只改组件 socket 字符串的新通道没能连接；复用旧外部 daemon 的 onStart/onEnd RPC 也没有取得视频字节。均未采用，原厂内嵌组件哈希保持不变。REA 原生分析在当前 Windows/AArch64 环境不支持该 ELF，未声称获得完整伪代码。[OpenHarmony 上游 StartDaemon](https://github.com/openharmony/testfwk_arkxtest/blob/master/uitest/server/server_main.cpp) 的 singleness 路径 daemonize 后直接执行扩展；此源码解释生命周期风险，不能替代当前 HarmonyOS 原厂实现的运行证据。
+
+当前采用低风险方案：DSH 内部窗口/网页/录像继续共享本机有界 broker 与一路编码器；对外部来源保留显式交接和截图预览。真正与 DevEco 同时独立采集，需要另做设备端采集/通信实现并验证系统权限、并发采集与性能，不能承诺改端口即可消除全部冲突，也不恢复已退役 HAP 通道。
+
 ## 本次症状和依据
 
 截图中的英文错误来自原生视频启动前的进程检查。实际检查手机发现 DevEco 的 `libscreen_casting.z.so` 进程；本机 DSH broker/native-video 目录没有活动归属文件。设备进程 PID 是手机 PID，不能混同于 Windows 的 DSH 宿主 PID。
@@ -29,4 +41,4 @@
 
 发布候选版时保持原宿主 0.2.0-rc.2，Harmony 与当前会话日志协议 2 的 E2E 成对安装。日志拖放及新电脑验收仍单独记录，不能由视频回归替代。
 
-当前进度：P0-1～P0-4 已开发并通过回归；实机占用诊断通过，外部投屏未被中断；新版已在本机 E 盘安装并冷启动。P0-5 的外部投屏释放后恢复与多窗口实机观看仍待验，不能由已有模拟生命周期测试替代。
+rc.2 历史进度：P0-1～P0-4 已开发并通过回归，P0-5 尚待验。rc.3 已补充上文的真实设备释放与双订阅恢复；桌面显示验收另记录于 VALIDATION.md，不能由传输回归替代。

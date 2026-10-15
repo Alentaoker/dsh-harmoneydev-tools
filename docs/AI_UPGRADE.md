@@ -1,6 +1,6 @@
 # AI 升级指南
 
-目标配套版本：dshHarmony 0.5.0-rc.2 / dshE2E 0.4.0-rc.2。适配 Windows x64、DSH 0.2.0-rc.2、真实 Node24；其它宿主版本停止自动升级，先单独适配。完整安装参数见 [AI 安装指南](AI_INSTALLATION.md)。
+目标配套版本：dshHarmony 0.5.0-rc.3 / dshE2E 0.4.0-rc.2。适配 Windows x64、DSH 0.2.0-rc.2、真实 Node24；其它宿主版本停止自动升级，先单独适配。完整安装参数见 [AI 安装指南](AI_INSTALLATION.md)。
 
 ## 先确认现状
 
@@ -18,6 +18,8 @@
 - 发行文件的 `release-manifest.json` 用于检查原始源码。开始依赖安装/构建后，生成的 ignored 输出不属于发行源码；不要为了让校验通过改写原 manifest。
 
 ## 冷启动与验收
+
+rc.2 → rc.3 仅变更 Harmony 恢复逻辑和界面，依赖/peer、E2E 0.4.0-rc.2、日志协议 2 和原生资源保持不变。仍需备份、重新构建和完整退出后冷启动；不得运行中覆盖生成的客户端与 worker。原日志和草稿不做迁移删除。投屏占用请按 AI_INSTALLATION.md 的设备 PID 交接指引验证。
 
 1. 使用 `start-desktop.ps1 -DshExe ... -DataHome ... -E2ENode ...`，确认实际进程使用原环境。web profile 独立登记，不能由桌面安装推断已升级。
 2. 查看实际面板/工具入口，无 fatal load failure；核对版本及当前会话。先做只读检查，再在独立验收会话验证授权的关键操作。

@@ -32,7 +32,7 @@ interface Broker { record: Record; closing: boolean; stopped: Promise<void>; sto
 function failureResponse(error: unknown) {
   const details: { [key: string]: string | number } = {};
   if (isHarmonyError(error)) {
-    for (const key of ['reason', 'source', 'recovery']) {
+    for (const key of ['reason', 'source', 'recovery', 'extension', 'deviceStartTime']) {
       const value = error.details?.[key];
       if (typeof value === 'string' && value.length <= 80) details[key] = value;
     }

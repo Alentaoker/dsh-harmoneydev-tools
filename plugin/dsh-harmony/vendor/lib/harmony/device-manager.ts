@@ -1218,6 +1218,16 @@ export class HarmonyDeviceManager {
     return await promise;
   }
 
+  async releaseVideoConflict(options:{serial:string;leaseToken:string;confirmed:boolean;expected:import('./native-video-conflict').NativeVideoRecovery;signal?:AbortSignal}) {
+    if(options.confirmed!==true || this.requireLease(options.serial,options.leaseToken).owner.kind!=='manual') {
+      throw new HarmonyError('INVALID_ARGUMENT','释放外部投屏必须由用户在设备面板明确确认。');
+    }
+    return this.action('release_video_conflict',options.serial,options.leaseToken,undefined,options.signal,async(backend,signal)=>{
+      if(!backend.releaseVideoConflict)throw new HarmonyError('CAPABILITY_UNAVAILABLE','当前设备后端不支持投屏恢复。');
+      await backend.releaseVideoConflict(options.serial,options.expected,signal);
+    });
+  }
+
   async openVideoStream(options: { serial: string; signal?: AbortSignal }): Promise<HarmonyVideoConnection> {
     validateSerial(options.serial);
     this.requireAdmission(options.serial, true);

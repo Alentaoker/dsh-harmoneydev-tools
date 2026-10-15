@@ -184,6 +184,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [frame, setFrame] = useState<HarmonyLiveFrame | null>(null);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   const [videoBlocked, setVideoBlocked] = useState(false);
+  const [videoRecovery, setVideoRecovery] = useState<HarmonyRequestError['videoRecovery']>();
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   useEffect(() => {
@@ -204,6 +205,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       setError(null);
       setFallbackReason(null);
       setVideoBlocked(false);
+      setVideoRecovery(undefined);
       return;
     }
     if (options.paused || document.hidden) {
@@ -259,6 +261,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     setError(null);
     setFallbackReason(null);
     setVideoBlocked(false);
+    setVideoRecovery(undefined);
     const initialCanvas = options.canvasRef.current;
     if (initialCanvas) contextFor(initialCanvas)?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
 
@@ -307,6 +310,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       setError(null);
       setFallbackReason(config?.initialPreview?(options.chinese?'视频通道已连接，先显示当前预览；画面变化后切入实时视频。':'Video connected; showing initial preview until the screen changes.'):null);
       setVideoBlocked(false);
+      setVideoRecovery(undefined);
     };
 
     const drawVideoFrame = (videoFrame: VideoFrame, attempt: StreamAttempt) => {
@@ -552,6 +556,10 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           jpegChain: Promise.resolve(),
         };
         activeAttempt = attempt;
+        // A previous PID describes a past rejection, not the in-flight probe.
+        setVideoBlocked(false);
+        setVideoRecovery(undefined);
+        setFallbackReason(hasFrame ? (options.chinese ? '正在重新检查视频通道…' : 'Checking the video channel again…') : null);
         const abortAttempt = () => attempt.controller.abort();
         lifecycle.signal.addEventListener("abort", abortAttempt, { once: true });
         // Preparing the reusable driver and native channel has its own bounded
@@ -590,6 +598,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           setError(reason);
           setFallbackReason(reason);
           setVideoBlocked(blocked);
+          setVideoRecovery(failure instanceof HarmonyRequestError ? failure.videoRecovery : undefined);
           closeDecoder();
           config = undefined;
           firstKeyframe = false;
@@ -631,5 +640,5 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     };
   }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey, visibilityEpoch]);
 
-  return { frame, status, mode, error, fallbackReason, videoBlocked, refresh };
+  return { frame, status, mode, error, fallbackReason, videoBlocked, videoRecovery, refresh };
 }

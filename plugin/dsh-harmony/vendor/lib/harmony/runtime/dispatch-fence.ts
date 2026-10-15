@@ -3,6 +3,7 @@ import type { HarmonyAutomationBackend } from "../types";
 
 const WRITES = new Set<keyof HarmonyAutomationBackend>([
   "prepareDevice",
+  "releaseVideoConflict",
   "tap", "doubleTap", "longPress", "swipe", "drag", "fling", "inputText", "pressKey",
   "launchApp", "installPackage", "stopApp", "clearAppData", "clearAppCache", "uninstallPackage", "setAppEnabled", "pushFile", "createDirectory", "deletePath", "renamePath", "chmodPath", "saveTextFile", "runShellCommand", "semanticAction", "startRecording",
   "keyHold", "touchHold",

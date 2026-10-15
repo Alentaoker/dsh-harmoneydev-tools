@@ -27,6 +27,8 @@ import { validateTcpDeviceAddress } from "./tcp-device";
 import { openHosScrcpyVideo } from "./hos-scrcpy";
 import { openSharedNativeDevEcoVideo, sharedNativeVideoStreaming } from "./shared-native-video";
 import { embeddedNativeVideoResource } from "./native-video-resource";
+import { releaseNativeVideoConflict } from "./native-video-recovery";
+import type { NativeVideoRecovery } from "./native-video-conflict";
 import type {
   BackendDevice,
   BackendSnapshot,
@@ -1092,6 +1094,14 @@ export class HdcBackend implements HarmonyAutomationBackend {
 
   async initializeMirror(_serial: string, _hapPath: string, _signal?: AbortSignal): Promise<void> {
     throw new HarmonyError("CAPABILITY_UNAVAILABLE", "旧 HAP 投屏通道已废弃，请直接连接插件原生视频。", {details:{reason:"mirror-hap-retired",dispatchState:"not-sent"}});
+  }
+
+  async releaseVideoConflict(serial:string, expected:NativeVideoRecovery, signal?:AbortSignal):Promise<void> {
+    validateSerial(serial);
+    await releaseNativeVideoConflict(serial,expected,async(args,operation,commandSignal)=>{
+      const result=await this.run(['-t',serial,...args],operation,commandSignal,8000);
+      return Buffer.concat([result.stdout,result.stderr]).toString('utf8');
+    },signal);
   }
 
   async openVideoStream(serial: string, signal?: AbortSignal, prepareAutomation?:(signal?:AbortSignal)=>Promise<boolean|void>): Promise<HarmonyVideoConnection> {

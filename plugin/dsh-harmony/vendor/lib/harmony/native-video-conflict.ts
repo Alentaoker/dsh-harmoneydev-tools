@@ -24,13 +24,19 @@ export function nativeVideoConflicts(output: string): NativeVideoConflict[] {
   return conflicts;
 }
 
-export function nativeVideoConflictError(conflicts: NativeVideoConflict[]): HarmonyError {
+export interface NativeVideoRecovery { devicePid: number; extension: string; deviceStartTime: string }
+export function nativeVideoStartTime(stat: string): string | undefined {
+  const tail = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/);
+  return stat.includes(')') && /^\d{1,20}$/.test(tail[19] ?? '') ? tail[19] : undefined;
+}
+export function nativeVideoConflictError(conflicts: NativeVideoConflict[], deviceStartTime?: string): HarmonyError {
   const first = conflicts[0];
   const owner = first.source === 'deveco' ? 'DevEco'
     : first.source === 'dsh-untracked' ? '未登记的 DSH' : '其他软件';
-  return new HarmonyError('DEVICE_BUSY', `设备上的${owner}投屏进程正在占用视频通道（设备 PID ${first.devicePid}）。请关闭该软件的设备投屏；释放后本页会自动重连，也可点击“重试实时视频”。`, {
+  return new HarmonyError('DEVICE_BUSY', `手机上仍有${owner}来源的投屏进程（设备 PID ${first.devicePid}），电脑软件退出后也可能遗留。请先关闭其投屏；确认不再使用时，可释放占用并重连。`, {
     retryable: true,
     details: { reason: 'native-video-conflict', source: first.source, devicePid: first.devicePid,
+      ...(deviceStartTime && first.source !== 'dsh-untracked' ? {deviceStartTime, extension:first.extension} : {}),
       conflicts, recovery: 'wait-for-release' },
   });
 }
