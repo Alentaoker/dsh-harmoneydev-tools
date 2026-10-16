@@ -219,7 +219,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
   const [visionModelKey, setVisionModelKey] = useState("");
   const [shareScreenshot, setShareScreenshot] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [toolTab, setToolTab] = useState<"apps" | "files" | "databases" | "commands" | "scenarios" | "voice" | "logs" | "history" | "diagnostics" | "inputs">("files");
+  const [toolTab, setToolTab] = useState<"apps" | "files" | "databases" | "commands" | "scenarios" | "voice" | "logs" | "history" | "tasks" | "diagnostics" | "inputs">("logs");
   const [databaseSelection, setDatabaseSelection] = useState("");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsVisited, setToolsVisited] = useState(false);
@@ -919,43 +919,23 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
           <button className={styles.iconButton} type="button" onClick={closeTools} aria-label={copy("关闭工具", "Close tools")}><AliIcon name="close" size={15} /></button>
         </div></div>
         <div className={styles.drawerTabs} role="tablist" aria-label={copy("设备工具分类", "Device tool categories")}>
-          {(["apps", "files", "databases", "commands", "scenarios", "voice", "logs", "history"] as const).map((tab, index) => <button id={`${drawerId}-${tab}`} aria-controls={`${drawerId}-content`} key={tab} role="tab" type="button" tabIndex={toolTab === tab || (index === 0 && ["diagnostics", "inputs"].includes(toolTab)) ? 0 : -1} aria-selected={toolTab === tab} onClick={() => changeToolTab(tab)} onKeyDown={event => {
-            const tabs = ["apps", "files", "databases", "commands", "scenarios", "voice", "logs", "history"] as const;
-            const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+          {(["logs", "history", "apps"] as const).map((tab, index) => <button id={`${drawerId}-${tab}`} aria-controls={`${drawerId}-content`} key={tab} role="tab" type="button" tabIndex={toolTab === tab ? 0 : -1} aria-selected={toolTab === tab} onClick={() => changeToolTab(tab)} onKeyDown={event => {
+            const tabs = ["logs", "history", "apps"] as const;
+            const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : -1;
             if (next >= 0) { event.preventDefault(); changeToolTab(tabs[next]); document.getElementById(`${drawerId}-${tabs[next]}`)?.focus(); }
-          }}>{(chinese ? ["应用", "文件", "数据库", "命令", "测试", "语音", "日志", "任务"] : ["Apps", "Files", "Database", "Commands", "Tests", "Voice", "Logs", "Tasks"])[index]}</button>)}
+          }}>{(chinese ? ["日志", "截图与录屏", "应用"] : ["Logs", "Captures", "Apps"])[index]}</button>)}
+          <select aria-label={copy("更多设备工具", "More device tools")} value={["logs", "history", "apps"].includes(toolTab) ? "" : toolTab} onChange={event => { if (event.target.value) changeToolTab(event.target.value as typeof toolTab); }}>
+            <option value="">{copy("更多工具", "More tools")}</option>
+            {([['files','文件'],['databases','数据库'],['commands','命令'],['scenarios','测试'],['voice','语音'],['tasks','后台任务'],['diagnostics','连接诊断'],['inputs','输入校准']] as const).map(([id,label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
         </div>
         <div ref={drawerBodyRef} className={styles.drawerBody} id={`${drawerId}-content`} role="tabpanel" aria-label={copy("工具内容", "Tool content")} onScroll={event => { drawerScrollPositions.current[`${selectedSerial}:${toolTab}`] = event.currentTarget.scrollTop; }}>
           {["diagnostics", "inputs"].includes(toolTab) ? <div className={styles.toolTitle}><strong>{toolTab === "diagnostics" ? copy("连接诊断", "Diagnostics") : copy("按键与触摸校准", "Input calibration")}</strong><button type="button" onClick={() => changeToolTab("scenarios")}>{copy("返回测试", "Back to tests")}</button></div> : null}
           {toolTab === "history" ? <div className={styles.mediaWorkspace}>
-          {mediaNotice ? <div className={styles.mediaNotice} role="status" aria-live="polite">
-            <span>{mediaNotice.message}</span>
-            {mediaNotice.artifact ? <>
-              {/* The desktop-authenticated image route needs the request headers preserved; Next's optimizer does not forward them. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {mediaNotice.artifact.kind === "screenshot" ? <img className={styles.mediaThumbnail} src={`/api/harmony/media/preview?serial=${encodeURIComponent(mediaNotice.artifact.serial ?? selectedSerial)}&filename=${encodeURIComponent(mediaNotice.artifact.filename)}`} alt={copy("最近保存的设备截图", "Last saved device screenshot")} /> : null}
-              <small>{mediaNotice.artifact.createdAt ? new Date(mediaNotice.artifact.createdAt).toLocaleString() : ""}{mediaNotice.artifact.width && mediaNotice.artifact.height ? ` · ${mediaNotice.artifact.width}×${mediaNotice.artifact.height}` : ""} · {(mediaNotice.artifact.size / 1024).toFixed(1)} KiB</small>
-              <div className={styles.mediaPath}>
-                <span>{copy("保存路径", "Saved to")}</span>
-                <code>{mediaNotice.artifact.path}</code>
-              </div>
-              <div className={styles.mediaNoticeActions}>
-                <button type="button" disabled={!window.piDesktop?.openPath || busy} onClick={() => void run(async () => {
-                  if (!await window.piDesktop?.openPath?.(mediaNotice.artifact!.path)) throw new Error(copy("无法打开媒体文件", "Could not open media file"));
-                })}>{copy("打开文件", "Open file")}</button>
-                <button type="button" disabled={mediaNotice.copyStatus === "copying" || mediaNotice.pathStatus === "copying"} onClick={() => void copyMediaPath()}>
-                  <AliIcon name="copy" size={13} />{mediaNotice.pathStatus === "copied" ? copy("路径已复制", "Path copied") : copy("复制路径", "Copy path")}
-                </button>
-                {mediaNotice.copyStatus === "failed" ? <button type="button" disabled={busy || mediaNotice.pathStatus === "copying"} onClick={() => void run(() => copyMediaArtifact(mediaNotice.artifact!))}>{copy("重新复制", "Retry copy")}</button> : null}
-                {mediaNotice.pathStatus === "failed" ? <span>{copy("路径复制失败，请重试", "Could not copy the path. Please retry.")}</span> : null}
-                {mediaNotice.artifact.kind === "screenshot" ? <button type="button" disabled={!canScreenshot || screenshotBusy} onClick={() => mediaAction("capture_screenshot")}>{copy("再截一张", "Capture again")}</button> : null}
-              </div>
-            </> : null}
-          </div> : null}
           <MediaHistory serial={selectedSerial} refreshKey={mediaNotice?.artifact?.filename} chinese={chinese} />
 
           </div> : null}
-          {toolsVisited ? <WorkbenchTools key={selectedSerial} tab={toolTab} serial={selectedSerial} active={active} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onControlHandoff={clearControl} geometryId={liveFrame?.geometryId} cwd={cwd} ownerId={ownerId} initialDatabaseId={databaseSelection} onOpenDatabase={id => { setDatabaseSelection(id); changeToolTab("databases"); }} onOpenFiles={() => changeToolTab("files")} onShowTasks={() => changeToolTab("history")} onOpenLocalTerminal={onOpenLocalTerminal} onCleanupConfirmed={async () => { setError(null); await refresh(); }} /> : null}
+          {toolsVisited ? <WorkbenchTools key={selectedSerial} tab={toolTab} serial={selectedSerial} active={active} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onControlHandoff={clearControl} geometryId={liveFrame?.geometryId} cwd={cwd} ownerId={ownerId} initialDatabaseId={databaseSelection} onOpenDatabase={id => { setDatabaseSelection(id); changeToolTab("databases"); }} onOpenFiles={() => changeToolTab("files")} onShowTasks={() => changeToolTab("tasks")} onOpenLocalTerminal={onOpenLocalTerminal} onCleanupConfirmed={async () => { setError(null); await refresh(); }} /> : null}
           {toolTab === "logs" ? <HarmonyLogViewer active={active && toolsOpen} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} /> : null}
           {toolTab === "diagnostics" ? <div className={styles.moreBody}>
             <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}>{copy("重连视频流", "Reconnect video")}</button>
@@ -968,7 +948,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     </main>
         {mediaNotice ? <div className={styles.captureNotice} role="status">
           <span>{mediaNotice.message}</span>
-          {mediaNotice.artifact ? <button type="button" onClick={() => openTools("history")}>{copy("查看路径", "View file")}</button> : null}
+          {mediaNotice.artifact ? <button type="button" onClick={() => openTools("history")}>{copy("查看截图与录屏", "View captures")}</button> : null}
           {mediaNotice.copyStatus === "failed" ? <button type="button" disabled={busy} onClick={() => void run(() => copyMediaArtifact(mediaNotice.artifact!))}>{copy("重新复制", "Retry copy")}</button> : null}
           <button type="button" aria-label={copy("关闭投屏提示", "Dismiss mirror notice")} onClick={() => setMediaNotice(null)}>×</button>
         </div> : null}

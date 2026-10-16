@@ -9,7 +9,7 @@ const {createLogMatcher,createLogTimeRange,logHighlightParts}=await import(outpu
 test.after(()=>rm(output,{force:true}));
 const bufferOutput=new URL('./.log-buffer-test.mjs',import.meta.url);
 await build({entryPoints:['vendor/lib/harmony/log-buffer.ts'],bundle:true,format:'esm',platform:'node',outfile:fileURLToPath(bufferOutput)});
-const {retainLogBatch}=await import(bufferOutput.href);
+const {retainLogBatch,LogRingBuffer}=await import(bufferOutput.href);
 test.after(()=>rm(bufferOutput,{force:true}));
 const appOutput=new URL('./.log-app-test.mjs',import.meta.url);
 await build({entryPoints:['vendor/lib/harmony/log-application.ts'],bundle:true,format:'esm',platform:'node',outfile:fileURLToPath(appOutput)});
@@ -51,4 +51,11 @@ test('high-volume batches bound retained rows and text payload together',()=>{
  assert.ok(entries.reduce((n,e)=>n+2*(e.raw.length+e.message.length),0)<=8*1024*1024);
  assert.equal(entries.at(-1).id,99999);
  assert.ok(retainLogBatch([], [{id:1,raw:'x'.repeat(100),message:'large'}],100,10).removed===1);
+});
+
+test('ring evicts oldest rows in order, respects byte budget and resets between devices',()=>{
+ const row=id=>({id,raw:'1234',message:'ab'}),ring=new LogRingBuffer(3,1000);
+ ring.push([row(0),row(1)]);assert.equal(ring.push([row(2),row(3),row(4)]).removed,2);assert.deepEqual(ring.snapshot().map(v=>v.id),[2,3,4]);
+ ring.clear();assert.equal(ring.length,0);assert.equal(ring.bytes,0);ring.push([row(9)]);assert.deepEqual(ring.snapshot().map(v=>v.id),[9]);
+ const bounded=new LogRingBuffer(10,20);bounded.push([row(1),row(2)]);assert.deepEqual(bounded.snapshot().map(v=>v.id),[2]);assert.equal(bounded.bytes,12);bounded.push([{id:3,raw:'x'.repeat(100),message:''}]);assert.equal(bounded.length,0);assert.equal(bounded.bytes,0);
 });

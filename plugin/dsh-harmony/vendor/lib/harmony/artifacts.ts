@@ -35,6 +35,11 @@ function timestampName(timestamp: Date): string {
   return timestamp.toISOString().replace(/[:.]/g, "-");
 }
 
+export async function markMediaOrigin(artifact: HarmonyMediaArtifact, source: 'manual' | 'automation') {
+  await writeFile(artifact.path + '.origin.json', JSON.stringify({ version: 1, source, filename: artifact.filename, createdAt: artifact.createdAt }), { mode: 0o600 });
+  return Object.assign(artifact, { source });
+}
+
 export function nextHarmonyArtifactPath(
   config: HarmonyConfig,
   kind: "screenshot" | "recording",
@@ -68,7 +73,7 @@ export async function saveHarmonyScreenshot(
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, screenshot.data, { mode: 0o600 });
   const info = await stat(path);
-  return {
+  return await markMediaOrigin({
     kind: "screenshot",
     serial,
     path,
@@ -78,7 +83,7 @@ export async function saveHarmonyScreenshot(
     width: screenshot.width,
     height: screenshot.height,
     mimeType: "image/png",
-  };
+  }, 'automation');
 }
 
 export async function recordingArtifact(
@@ -87,7 +92,7 @@ export async function recordingArtifact(
   createdAt: Date,
 ): Promise<HarmonyMediaArtifact> {
   const info = await stat(path);
-  return {
+  return await markMediaOrigin({
     kind: "recording",
     serial,
     path,
@@ -95,5 +100,5 @@ export async function recordingArtifact(
     createdAt: createdAt.toISOString(),
     size: info.size,
     mimeType: "video/mp4",
-  };
+  }, 'automation');
 }

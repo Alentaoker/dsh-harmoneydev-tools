@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const denied = requireHarmonyAccess(request); if (denied) return denied;
   try {
-    const serial = new URL(request.url).searchParams.get("serial") ?? "";
-    return noStoreJson(await listHarmonyMediaHistory(getHarmonyDeviceManager().getConfig(), serial));
+    const params = new URL(request.url).searchParams;
+    const serial = params.get("serial") ?? "";
+    const scope = params.get("scope") === "legacy" ? "legacy" : "manual";
+    return noStoreJson(await listHarmonyMediaHistory(getHarmonyDeviceManager().getConfig(), serial, scope));
   } catch (error) { return harmonyErrorResponse(error); }
 }

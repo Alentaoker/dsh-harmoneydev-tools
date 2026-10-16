@@ -106,7 +106,7 @@ export async function importPackage({ source, name, work, signal, dictionaries =
     let parsingStatus = 'complete';
     if (binary.length) {
       const tool = await findHilogTool(toolPath);
-      if (!dicts.length) { parsingStatus = 'needs-dictionary'; warnings.push('缺少配套 hilog_dict*.zip；原包已保留。将字典导入同一目录后点击重新解析。'); }
+      if (!dicts.length) { parsingStatus = 'needs-dictionary'; warnings.push('缺少配套 hilog_dict*.zip；原包已保留。将字典导入当前会话后点击重新解析。'); }
       else if (!tool && runTool === runHilogTool) { parsingStatus = 'needs-tool'; warnings.push('未找到 hilogtool；请在日志工作台配置本机工具路径后重新解析。'); }
       else {
         // Native SDK utilities can still have MAX_PATH-limited ZIP handling.

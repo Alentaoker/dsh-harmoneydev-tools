@@ -156,6 +156,7 @@ export interface HarmonyConfig {
 }
 
 export interface HarmonyMediaArtifact {
+  source?: "manual" | "automation" | "unknown";
   kind: "screenshot" | "recording";
   serial: string;
   path: string;
@@ -168,6 +169,7 @@ export interface HarmonyMediaArtifact {
 }
 
 export interface HarmonyRecordingState {
+  source?: "manual" | "automation";
   serial: string;
   recordingId: string;
   remoteName: string;

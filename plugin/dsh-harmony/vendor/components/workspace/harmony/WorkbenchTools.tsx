@@ -60,7 +60,7 @@ export function WorkbenchTools({ serial, canControl, ensureControl, onControlHan
   useEffect(() => { if (!active) controller.current?.abort(); }, [active]);
   useEffect(() => { setVisitedTabs(current => current.includes(tab) ? current : [...current, tab]); }, [tab]);
   useEffect(() => {
-    if (!active || tab !== "history" || !serial) return;
+    if (!active || tab !== "tasks" || !serial) return;
     const requestController = new AbortController();
     setHistory([]);
     void fetch(`/api/harmony/scenario?serial=${encodeURIComponent(serial)}`, { signal: requestController.signal, cache: "no-store" })
@@ -87,8 +87,8 @@ export function WorkbenchTools({ serial, canControl, ensureControl, onControlHan
       {error ? <p role="alert">{error}</p> : null}{message ? <p role="status">{message}</p> : null}
       {busy ? <button type="button" onClick={() => { controller.current?.abort(); setMessage(copy("已请求取消；请查看设备释放状态。", "Cancellation requested; check release state.")); }}>{copy("取消本次操作", "Cancel this operation")}</button> : null}
       <div hidden={tab !== "apps"}><ApplicationPicker serial={serial} active={active && tab === "apps"} canControl={canControl} ensureControl={ensureControl} chinese={chinese} cwd={cwd} onOpenSandbox={onOpenFiles ? bundleName => { setSandboxTarget({ id: ++sandboxTargetId.current, bundleName }); onOpenFiles(); } : undefined}/></div>
-      {visitedTabs.includes("files") || tab === "files" ? <div hidden={tab !== "files"}><DeviceFiles serial={serial} initialSandbox={sandboxTarget} chinese={chinese} cwd={cwd} canControl={canControl} ensureControl={ensureControl} onControlHandoff={onControlHandoff} onDatabaseOpen={onOpenDatabase} /></div> : null}
-      {visitedTabs.includes("databases") || tab === "databases" ? <div hidden={tab !== "databases"}><SqliteViewer serial={serial} initialDatabaseId={initialDatabaseId} chinese={chinese} onShowTasks={onShowTasks} /></div> : null}
+      {tab === "files" ? <div hidden={tab !== "files"}><DeviceFiles serial={serial} initialSandbox={sandboxTarget} chinese={chinese} cwd={cwd} canControl={canControl} ensureControl={ensureControl} onControlHandoff={onControlHandoff} onDatabaseOpen={onOpenDatabase} /></div> : null}
+      {tab === "databases" ? <div hidden={tab !== "databases"}><SqliteViewer serial={serial} initialDatabaseId={initialDatabaseId} chinese={chinese} onShowTasks={onShowTasks} /></div> : null}
       <div hidden={tab !== "commands"}><DeviceConsole serial={serial} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onOpenLocalTerminal={onOpenLocalTerminal} visible={active && tab === "commands"} cwd={cwd} /></div>
       <div hidden={tab !== "scenarios"}><ScenarioWorkbench active={tab === "scenarios"} serial={serial} canControl={canControl} ensureControl={ensureControl} cwd={cwd} chinese={chinese}/></div>
       {tab === "diagnostics" ? <>
@@ -143,7 +143,7 @@ export function WorkbenchTools({ serial, canControl, ensureControl, onControlHan
         </details>
         {profileId ? <p>{copy("语音配置 ID", "Voice profile ID")}: <code style={{ overflowWrap: "anywhere" }}>{profileId}</code></p> : null}
       </> : null}
-      {tab === "history" ? <>
+      {tab === "tasks" ? <>
         <TaskOverview serial={serial} chinese={chinese} />
         <DatabaseExportJobs serial={serial} chinese={chinese} />
         <TransferJobs serial={serial} scope={{ kind: "shared" }} deviceDirectory="/data/local/tmp" cwd={cwd} selectedFiles={[]} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onDownloadsQueued={() => undefined} historyOnly />

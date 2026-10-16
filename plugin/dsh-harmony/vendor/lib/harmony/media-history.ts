@@ -1,4 +1,4 @@
-import { lstat, opendir, open } from "node:fs/promises";
+import { lstat, opendir, open, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { resolveHarmonyStorage, safeHarmonyDeviceName } from "./artifacts";
 import { HarmonyError } from "./errors";
@@ -30,7 +30,7 @@ async function screenshotSize(path: string): Promise<{ width: number; height: nu
 }
 
 /** Rediscover saved results from the configured private media folders after a desktop restart. */
-export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: string): Promise<{ artifacts: HarmonyMediaArtifact[]; truncated: boolean }> {
+export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: string, scope: "all" | "manual" | "legacy" = "all"): Promise<{ artifacts: HarmonyMediaArtifact[]; truncated: boolean }> {
   if (!/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(serial)) throw new HarmonyError("INVALID_ARGUMENT", "Choose a valid device");
   const prefix = safeHarmonyDeviceName(serial);
   const storage = resolveHarmonyStorage(config);
@@ -60,13 +60,19 @@ export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: str
   candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (candidates.length > MAX_HISTORY) truncated = true;
   const artifacts: HarmonyMediaArtifact[] = [];
-  for (const candidate of candidates.slice(0, MAX_HISTORY * 2)) {
+  for (const candidate of candidates) {
     const path = join(candidate.directory, candidate.filename);
     const info = await lstat(path).catch(() => undefined);
     if (!info?.isFile() || info.isSymbolicLink() || info.size < 1) continue;
     const dimensions = candidate.kind === "screenshot" ? await screenshotSize(path).catch(() => undefined) : undefined;
     if (candidate.kind === "screenshot" && (!dimensions || info.size > 20 * 1024 * 1024)) continue;
-    artifacts.push({ kind: candidate.kind, serial, path, filename: candidate.filename,
+    const marker = await lstat(path + '.origin.json').catch(() => undefined);
+    let source: 'manual' | 'automation' | 'unknown' = 'unknown';
+    if (marker?.isFile() && !marker.isSymbolicLink() && marker.size < 4096) {
+      try { const origin = JSON.parse(await readFile(path + '.origin.json', 'utf8')); if (origin.filename === candidate.filename && ['manual', 'automation'].includes(origin.source)) source = origin.source; } catch {}
+    }
+    if (scope === 'manual' && source !== 'manual' || scope === 'legacy' && source !== 'unknown') continue;
+    artifacts.push({ source, kind: candidate.kind, serial, path, filename: candidate.filename,
       createdAt: candidate.createdAt, size: info.size, ...(dimensions ?? {}), mimeType: candidate.kind === "screenshot" ? "image/png" : "video/mp4" });
     if (artifacts.length >= MAX_HISTORY) break;
   }

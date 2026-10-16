@@ -1,66 +1,47 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
-import type { HarmonyMediaArtifact } from "@/lib/harmony/types";
-import { copyText } from "@/lib/clipboard";
-import styles from "../HarmonyPanel.module.css";
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import type { HarmonyMediaArtifact } from '@/lib/harmony/types';
+import { MediaSessionContext } from '../../../../src/media-session';
+import { MediaPreview, mediaUrl } from './MediaPreview';
+import styles from '../HarmonyPanel.module.css';
 
 export function MediaHistory({ serial, refreshKey, chinese }: { serial: string; refreshKey?: string; chinese: boolean }) {
-  const copy = (zh: string, en: string) => chinese ? zh : en;
-  const [artifacts, setArtifacts] = useState<HarmonyMediaArtifact[]>([]);
-  const [truncated, setTruncated] = useState(false);
-  const [filter, setFilter] = useState<"all" | "screenshot" | "recording">("all");
-  const [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
-  const load = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`/api/harmony/media/history?serial=${encodeURIComponent(serial)}`, { cache: "no-store", signal });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message ?? data.error ?? "Unable to load media history");
-    if (!Array.isArray(data.artifacts)) throw new Error("Invalid media history");
-    setArtifacts(data.artifacts); setTruncated(Boolean(data.truncated)); setError("");
-  }, [serial]);
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal).catch(failure => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure)); });
-    return () => controller.abort();
-  }, [load, refreshKey]);
-  const act = async (action: () => Promise<unknown>, success: string) => {
-    if (busy) return;
-    setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(success); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
-    finally { setBusy(false); }
+  const [artifacts,setArtifacts]=useState<HarmonyMediaArtifact[]>([]),[truncated,setTruncated]=useState(false),[legacy,setLegacy]=useState(false);
+  const [filter,setFilter]=useState('all'),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[preview,setPreview]=useState<HarmonyMediaArtifact>();
+  const {prepareAttachment}=useContext(MediaSessionContext);
+  const loadGeneration=useRef(0);
+  const adding=useRef(false),currentSerial=useRef(serial);currentSerial.current=serial;
+  const load=useCallback(async(signal?:AbortSignal)=>{
+    const generation=++loadGeneration.current;
+    const response=await fetch(`/api/harmony/media/history?${new URLSearchParams({serial,scope:legacy?'legacy':'manual'})}`,{cache:'no-store',signal});
+    const data=await response.json();if(!response.ok)throw Error(data.error?.message||data.error||'截图历史读取失败');
+    if(!Array.isArray(data.artifacts))throw Error('截图历史格式不匹配，请更新并重启插件');
+    if(!signal?.aborted && generation===loadGeneration.current && currentSerial.current===serial){setArtifacts(data.artifacts);setTruncated(!!data.truncated);setError('');}
+  },[serial,legacy]);
+  useEffect(()=>{const controller=new AbortController();setArtifacts([]);setPreview(undefined);setError('');setNotice('');void load(controller.signal).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();},[load,refreshKey]);
+  const add=async(item:HarmonyMediaArtifact)=>{
+    if(item.kind==='recording'){setPreview(item);return;}
+    if(adding.current)return;adding.current=true;setBusy(true);setError('');setNotice('');
+    try {
+      if(!prepareAttachment)throw Error('请先打开目标会话');const attach=prepareAttachment();
+      const response=await fetch(mediaUrl(item));if(!response.ok)throw Error('图片读取失败');
+      const blob=await response.blob();await attach(new File([blob],item.filename,{type:'image/png'}));
+      if(currentSerial.current===item.serial)setNotice('图片已加入发起时的当前对话，尚未发送');
+    }catch(e){setError(e instanceof Error?e.message:String(e));}finally{adding.current=false;setBusy(false);}
   };
-  const visible = artifacts.filter(item => filter === "all" || item.kind === filter);
-  return <fieldset className={styles.mediaHistory} data-harmony-task-section="media" aria-label={copy("截图与录屏历史", "Screenshot and recording history")}>
-    <legend>{copy("截图与录屏历史", "Screenshot and recording history")}</legend>
-    <div className={styles.mediaHistoryToolbar}>
-      <label>{copy("显示", "Show")}<select value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>
-        <option value="all">{copy("全部", "All")}</option><option value="screenshot">{copy("截图", "Screenshots")}</option><option value="recording">{copy("录屏", "Recordings")}</option>
-      </select></label>
-      <button type="button" disabled={busy} onClick={() => void load().catch(failure => setError(failure instanceof Error ? failure.message : String(failure)))}>{copy("刷新历史", "Refresh history")}</button>
-    </div>
-    {notice ? <p role="status">{notice}</p> : null}{error ? <p role="alert">{error}</p> : null}
-    {truncated ? <small>{copy("仅展示最近 40 个结果；媒体目录内容较多。", "Showing the 40 newest results; the media directory contains more.")}</small> : null}
-    {!visible.length ? <p className={styles.mediaEmpty}>{copy("此设备暂无已保存的截图或录屏。", "No saved screenshots or recordings for this device.")}</p> : null}
-    <div className={styles.mediaHistoryList}>{visible.map(item => <article className={styles.mediaHistoryCard} key={item.path}>
-      <div><strong>{item.kind === "screenshot" ? copy("截图", "Screenshot") : copy("录屏", "Recording")}</strong><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time></div>
-      {item.kind === "screenshot" ? <>
-        {/* eslint-disable-next-line @next/next/no-img-element -- The desktop-authenticated route must retain the request headers. */}
-        <img loading="lazy" src={`/api/harmony/media/preview?${new URLSearchParams({ serial, filename: item.filename })}`} alt={copy(`${item.filename} 的缩略图`, `Thumbnail of ${item.filename}`)} />
-      </> : null}
-      <small>{item.filename}{item.width && item.height ? ` · ${item.width}×${item.height}` : ""} · {(item.size / 1024).toFixed(1)} KiB</small>
-      <code className={styles.mediaHistoryPath} title={item.path}>{item.path}</code>
-      <div className={styles.mediaHistoryActions}>
-        <button type="button" disabled={busy || !window.piDesktop?.openPath} onClick={() => void act(async () => {
-          if (!await window.piDesktop?.openPath?.(item.path)) throw new Error(copy("无法打开媒体文件", "Could not open media file"));
-        }, copy("已打开文件", "Opened file"))}>{copy("打开文件", "Open file")}</button>
-        <button type="button" disabled={busy} onClick={() => void act(() => copyText(item.path), copy("路径已复制", "Path copied"))}>{copy("复制路径", "Copy path")}</button>
-        <button type="button" disabled={busy || !window.piDesktop?.clipboard?.copyHarmonyMedia} onClick={() => void act(async () => {
-          const copyMedia = window.piDesktop?.clipboard?.copyHarmonyMedia;
-          if (!copyMedia) throw new Error(copy("媒体剪贴板不可用", "Media clipboard unavailable"));
-          await copyMedia({ kind: item.kind, path: item.path });
-        }, copy("媒体已复制", "Media copied"))}>{copy("复制媒体", "Copy media")}</button>
+  return <section className={styles.captureLibrary} aria-label="手动截图与录屏">
+    <div className={styles.captureLibraryHeading}><div><strong>截图与录屏</strong><small>{legacy?'来源不明的旧记录，保留但不认定为手动':'手动保存 · 跨会话保留 · 按时间排序'}</small></div><button onClick={()=>void load().catch(e=>setError(e.message))}>刷新</button></div>
+    <div className={styles.captureFilters}><select aria-label="媒体类型" value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">全部</option><option value="screenshot">截图</option><option value="recording">录屏</option></select><label><input type="checkbox" checked={legacy} onChange={e=>setLegacy(e.target.checked)}/>查看来源不明的旧记录</label></div>
+    {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
+    {truncated&&<small>最多展示最近 40 份符合范围的记录。</small>}
+    {!artifacts.filter(item=>filter==='all'||item.kind===filter).length&&<p className={styles.captureEmpty}>{legacy?'没有可展示的旧记录':'点击设备下方“截图”或“录屏”即可保存。AI 与测试截图不混入此处。'}</p>}
+    <div className={styles.captureGrid}>{artifacts.filter(item=>filter==='all'||item.kind===filter).map(item=><article key={item.path} className={styles.captureCard}>
+      <button className={styles.captureThumb} aria-label={'预览 '+item.filename} onClick={()=>setPreview(item)}>{item.kind==='screenshot'?<img loading="lazy" src={mediaUrl(item)} alt="点击预览并批注截图"/>:<span>录屏 · 点击播放</span>}</button>
+      <div className={styles.captureCardBody}><strong>{item.kind==='screenshot'?'截图':'录屏'} · {new Date(item.createdAt).toLocaleString()}</strong><small>{item.source==='manual'?'手动保存':'来源未知'}{item.width?` · ${item.width}×${item.height}`:''}</small>
+        <div className={styles.captureCardActions}><button onClick={()=>setPreview(item)}>预览{item.kind==='screenshot'?'与批注':''}</button><button disabled={busy} onClick={()=>void add(item)}>{item.kind==='recording'?'选帧加入对话':'加入对话'}</button></div>
+        <details><summary>文件信息</summary><small>{item.filename} · {(item.size/1024).toFixed(1)} KiB</small><code>{item.path}</code></details>
       </div>
     </article>)}</div>
-  </fieldset>;
+    {preview&&<MediaPreview item={preview} onClose={()=>setPreview(undefined)}/>}
+  </section>;
 }

@@ -43,7 +43,7 @@ export function registerRoutes(ctx, service) {
     ['/api/dsh-e2e/log-library/delete', ['POST'], async request => service.logLibrary.remove(await mutationBody(request, 512 * 1024), requestScope(request, true))],
     ['/api/dsh-e2e/log-library/restore', ['POST'], async request => { const body = await mutationBody(request); return service.logLibrary.restore(body.batchId, requestScope(request, true), body.ids); }],
     ['/api/dsh-e2e/log-library/begin', ['POST'], async request => service.logLibrary.begin(await mutationBody(request), requestScope(request, true))],
-    ['/api/dsh-e2e/log-library/chunk', ['POST'], async request => { const scope = requestScope(request, true), origin = request.headers.get('origin'); if (origin && origin !== new URL(request.url).origin && origin !== 'null') throw Error('请求来源不匹配'); const p = new URL(request.url).searchParams; const length = Number(request.headers.get('content-length')); if (length > 262144) throw Error('日志分块过大'); const data = Buffer.from(await request.arrayBuffer()); return service.logLibrary.chunk(p.get('id'), Number(p.get('index')), data, scope); }],
+    ['/api/dsh-e2e/log-library/chunk', ['POST'], async request => { const scope = requestScope(request, true); assertMutationOrigin(request); const p = new URL(request.url).searchParams; const length = Number(request.headers.get('content-length')); if (length > 262144) throw Error('日志分块过大'); const data = Buffer.from(await request.arrayBuffer()); return service.logLibrary.chunk(p.get('id'), Number(p.get('index')), data, scope); }],
     ['/api/dsh-e2e/log-library/finish', ['POST'], async request => service.logLibrary.finish((await mutationBody(request)).id, requestScope(request, true))],
     ['/api/dsh-e2e/log-library/abort', ['POST'], async request => service.logLibrary.abort((await mutationBody(request)).id, requestScope(request, true))],
     ['/api/dsh-e2e/log-library/logs', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.getLogs(p.get('id'), Object.fromEntries([...p].filter(([key]) => key !== 'id')), requestScope(request, true), request.signal); }],
@@ -74,6 +74,17 @@ export function registerRoutes(ctx, service) {
   } }), 'dshE2E: artifacts');
 }
 export async function mutationBody(request, maximum = 4096) {
-  const origin = request.headers.get('origin'); if (origin && origin !== new URL(request.url).origin && origin !== 'null') throw new Error('请求来源不匹配');
+  assertMutationOrigin(request);
   const text = await request.text(); if (text.length > maximum) throw new Error('请求过大'); return JSON.parse(text);
+}
+
+// The authenticated DSH HTTP bridge uses a synthetic request URL and preserves Host.
+// Compare the browser Origin with that authority, never with a forwarded header.
+export function assertMutationOrigin(request) {
+  const origin = request.headers.get('origin');
+  if (!origin || origin === 'null') return; // Desktop carrier compatibility.
+  const target = new URL(request.url);
+  const host = request.headers.get('host');
+  const expected = target.hostname === 'dsh.internal' && host ? new URL(target.protocol + '//' + host).origin : target.origin;
+  if (origin !== expected) throw new Error('请求来源不匹配');
 }

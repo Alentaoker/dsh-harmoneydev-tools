@@ -5,7 +5,7 @@ import { LogSessionContext, saveSessionLog } from '../../../src/log-session';
 import { LogApplicationPicker } from './LogApplicationPicker';
 import { ResizableLogDetails } from './ResizableLogDetails';
 import { createLogMatcher, createLogTimeRange, logHighlightParts } from "@/lib/harmony/log-filter";
-import { retainLogBatch } from "@/lib/harmony/log-buffer";
+import { LogRingBuffer } from "@/lib/harmony/log-buffer";
 import { logApplicationPids, logBelongsToApplication } from "@/lib/harmony/log-application";
 import { AliIcon } from "../AliIcon";
 import styles from "./HarmonyPanel.module.css";
@@ -86,7 +86,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   const [followTail, setFollowTail] = useState(true);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
-  const buffered = useRef<Array<LogEntry & { id: number }>>([]);
+  const [buffered] = useState(() => new LogRingBuffer<LogEntry & { id: number }>());
   const anchor = useRef<{ id: string; offset: number } | null>(null);
   const captureAnchor = () => {
     const output = outputRef.current;
@@ -111,7 +111,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   };
 
   useEffect(() => {
-    buffered.current = []; setEntries([]); setDropped(0); setEvicted(0); setSelected(undefined); setNotice(undefined); setSavedFile(undefined);
+    buffered.clear(); setEntries([]); setDropped(0); setEvicted(0); setSelected(undefined); setNotice(undefined); setSavedFile(undefined);
     anchor.current = null; following.current = true; setFollowTail(true); setScrollTop(0);
   }, [serial, refreshKey]);
 
@@ -161,15 +161,14 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     const stream = new EventSource(`/api/harmony/logs/events?serial=${encodeURIComponent(serial)}`);
     let changed = false;
     const flushDisplay = setInterval(() => {
-      if (changed && !pausedRef.current) { changed = false; captureAnchor(); setEntries(buffered.current); }
+      if (changed && !pausedRef.current) { changed = false; captureAnchor(); setEntries(buffered.snapshot()); }
     }, 250);
     stream.addEventListener("connected", () => { setLoading(false); setError(null); });
     stream.addEventListener("logs", (event) => {
       try {
         const payload = JSON.parse((event as MessageEvent).data) as { entries: LogEntry[]; dropped?: number };
-        const batch = retainLogBatch(buffered.current, payload.entries.map((entry) => ({ ...entry, id: nextId.current++ })));
+        const batch = buffered.push(payload.entries.map((entry) => ({ ...entry, id: nextId.current++ })));
         const removed = batch.removed;
-        buffered.current = batch.entries;
         if (removed) setEvicted(count => count + removed);
         if (Number.isSafeInteger(payload.dropped) && payload.dropped! > 0) setDropped(count => count + payload.dropped!);
         changed = true;
@@ -302,7 +301,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
       </label>
       <button className={styles.iconButton} type="button" onClick={() => setRegex(!regex)} aria-pressed={regex} title={copy("正则表达式", "Regular expression")}>.*</button>
       <button className={styles.iconButton} type="button" onClick={() => setCaseSensitive(!caseSensitive)} aria-pressed={caseSensitive} title={copy("筛选区分大小写", "Case-sensitive filters")}>Aa</button>
-      <button className={styles.iconButton} type="button" onClick={() => { if (paused) { captureAnchor(); setEntries(buffered.current); } pausedRef.current = !paused; setPaused(!paused); }} aria-pressed={paused} aria-label={paused ? copy("继续显示日志", "Resume log display") : copy("暂停显示日志", "Pause log display")} title={paused ? copy("继续", "Resume") : copy("暂停", "Pause")}>
+      <button className={styles.iconButton} type="button" onClick={() => { if (paused) { captureAnchor(); setEntries(buffered.snapshot()); } pausedRef.current = !paused; setPaused(!paused); }} aria-pressed={paused} aria-label={paused ? copy("继续显示日志", "Resume log display") : copy("暂停显示日志", "Pause log display")} title={paused ? copy("继续", "Resume") : copy("暂停", "Pause")}>
         <AliIcon name={paused ? "play" : "pause"} size={13} />
       </button>
       <button className={styles.iconButton} type="button" onClick={() => setRefreshKey((key) => key + 1)} title={copy("刷新日志", "Refresh logs")} aria-label={copy("刷新日志", "Refresh logs")}>
@@ -331,7 +330,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
         else setNotice(copy("请先选中日志文字或打开一行详情", "Select log text or open a line first"));
       }}>{copy("复制选中日志", "Copy selected logs")}</button>
       </div></details>
-      <button type="button" onClick={() => { buffered.current = []; setEntries([]); setSelected(undefined); setDropped(0); setEvicted(0); setNotice(undefined); anchor.current = null; }}>{copy("清空当前视图", "Clear current view")}</button>
+      <button type="button" onClick={() => { buffered.clear(); setEntries([]); setSelected(undefined); setDropped(0); setEvicted(0); setNotice(undefined); anchor.current = null; }}>{copy("清空当前视图", "Clear current view")}</button>
       <button type="button" onClick={() => { setBundle(""); setPid(""); setLevel(""); setQuery(""); setRegex(false); setCaseSensitive(false); setTag(""); setTagRegex(false); setTid(""); setDomain(""); setFromTime(""); setToTime(""); }}>{copy("重置筛选", "Reset filters")}</button>
     </div>
     {findOpen ? <div className={styles.logFind}>
@@ -345,8 +344,8 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     </div> : null}
     <div className={styles.logMeta}>
       <span>{bundle || (selectedProcess ? `${selectedProcess.name} · PID ${selectedProcess.pid}` : copy("所有进程", "All processes"))}{processUpdatedAt ? ` · PID ${processUpdatedAt}` : ""}</span>
-      <span>{visibleEntries.length} / {entries.length} {copy("行（最近 10000 行 / 8 MiB 文本上限）", "lines (10000 rows / 8 MiB text limit)")}{loading ? ` · ${copy("连接中", "connecting")}` : ""}{paused ? ` · ${copy("已暂停显示，继续采集", "display paused; still collecting")}` : ""}{!online ? ` · ${copy("已断开，保留已采集日志", "disconnected; collected logs retained")}` : ""}{dropped ? ` · ${copy("未接收", "Dropped")} ${dropped}` : ""}{evicted ? ` · ${copy("超出保留上限", "Evicted")} ${evicted}` : ""}</span>
-      {(!followTail || paused) && <button onClick={() => { following.current = true; setFollowTail(true); pausedRef.current = false; setPaused(false); setEntries(buffered.current); if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }}>{copy("跟随最新日志", "Follow latest")}</button>}
+      <span>{visibleEntries.length} / {entries.length} {copy("行（最近 100000 行 / 128 MiB 文本上限）", "lines (100000 rows / 128 MiB text limit)")}{loading ? ` · ${copy("连接中", "connecting")}` : ""}{paused ? ` · ${copy("已暂停显示，继续采集", "display paused; still collecting")}` : ""}{!online ? ` · ${copy("已断开，保留已采集日志", "disconnected; collected logs retained")}` : ""}{dropped ? ` · ${copy("未接收", "Dropped")} ${dropped}` : ""}{evicted ? ` · ${copy("超出保留上限", "Evicted")} ${evicted}` : ""}</span>
+      {(!followTail || paused) && <button onClick={() => { following.current = true; setFollowTail(true); pausedRef.current = false; setPaused(false); setEntries(buffered.snapshot()); if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }}>{copy("跟随最新日志", "Follow latest")}</button>}
     </div>
     <div ref={columnsRef} className={styles.logColumns}><div className={styles.logLine}><span>{copy("时间", "Time")}</span><span>L</span><span>PID:TID</span><span>Domain / TAG</span><span>{copy("消息 · 点击查看完整行", "Message · click for details")}</span></div></div>
     <div ref={outputRef} className={styles.logOutput} role="log" aria-live="off" onScroll={(event) => { const output = event.currentTarget; if (columnsRef.current) columnsRef.current.scrollLeft = output.scrollLeft; setScrollTop(output.scrollTop); const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < rowHeight; following.current = atBottom; setFollowTail(atBottom); }}>

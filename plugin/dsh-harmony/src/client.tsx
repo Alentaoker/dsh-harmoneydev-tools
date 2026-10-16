@@ -1,3 +1,4 @@
+import { MediaSessionContext, prepareMediaAttachment } from './media-session';
 import React, { useEffect, useState } from 'react';
 import { SafeHarmonyPanel } from '../vendor/components/workspace/HarmonyPanel';
 import './theme.css';
@@ -27,7 +28,7 @@ export function apply(ctx: any) {
     };
     const openLogs = (fileId?: string) => { if (!sessionId) return; sessionStorage.setItem('dshE2E:open-log:' + sessionId, fileId || '__workbench__'); ctx.sidebarRight.openTabIn(sessionId, 'dshE2E'); window.dispatchEvent(new CustomEvent('dshE2E:open-logs', { detail: { sessionId, id: fileId } })); };
     const analyze = (text: string) => { const session = sessionId && ctx.sessions.scope(sessionId); if (!session) throw Error('请先打开一个会话'); appendAnalysisDraft(ctx.conversation.input.for(session), text); };
-    return <div className="dshHarmony"><LogSessionContext.Provider value={{ sessionId, onOpenLogs: openLogs, onAnalyze: analyze }}><SafeHarmonyPanel openLogRequest={openLogRequest} active={info.tab.visible} cwd={cwd} pluginVersion={version} onOpenLocalTerminal={() => ctx.sidebarRight.openTabIn(sessionId, 'terminal')} onGuideAgent={guide} /></LogSessionContext.Provider></div>;
+    return <div className="dshHarmony"><MediaSessionContext.Provider value={{ prepareAttachment: () => prepareMediaAttachment(ctx, sessionId) }}><LogSessionContext.Provider value={{ sessionId, onOpenLogs: openLogs, onAnalyze: analyze }}><SafeHarmonyPanel openLogRequest={openLogRequest} active={info.tab.visible} cwd={cwd} pluginVersion={version} onOpenLocalTerminal={() => ctx.sidebarRight.openTabIn(sessionId, 'terminal')} onGuideAgent={guide} /></LogSessionContext.Provider></MediaSessionContext.Provider></div>;
   }
   function Header(props: any) { return <button title="鸿蒙设备控制与测试工作台" onClick={() => props.sessionId ? ctx.sidebarRight.openTabIn(props.sessionId, kind) : ctx.sidebarRight.openTab(kind)}>dshHarmony</button>; }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel)), 'dshHarmony: body');

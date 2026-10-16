@@ -1,3 +1,4 @@
+import { markMediaOrigin } from "./artifacts";
 import { randomBytes } from "node:crypto";
 import { statSync, readFileSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
@@ -1406,6 +1407,7 @@ export class HarmonyDeviceManager {
   }
 
   async startRecording(options: {
+    source?: "manual" | "automation";
     serial: string;
     leaseToken?: string;
     ownerId: string;
@@ -1434,6 +1436,7 @@ export class HarmonyDeviceManager {
       const state: HarmonyRecordingState = {
         serial: options.serial,
         recordingId,
+        source: options.source || "automation",
         remoteName: `piora-recording-${recordingId}.mp4`,
         startedAt: iso(this.now()),
         ownerId: options.ownerId,
@@ -1529,6 +1532,7 @@ export class HarmonyDeviceManager {
       this.clearRecordingRecovery(serial);
       clearTimeout(this.recordingTimers.get(serial)); this.recordingTimers.delete(serial);
       const artifact = await recordingArtifact(serial, destinationPath, new Date());
+      if (state.source === "manual") await markMediaOrigin(artifact, "manual");
       const mediaFailure = this.recordingFailures.get(state.recordingId);
       if (mediaFailure) throw mediaFailure;
       if (journalFailure) throw journalFailure;

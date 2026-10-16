@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { createLogLibrary } from '../src/log-library.mjs';
-import { registerRoutes } from '../src/index.mjs';
+import { registerRoutes, mutationBody } from '../src/index.mjs';
 import { appendLogDraft, logAnalysisPrompt, importLogFile } from '../src/log-client.mjs';
 const A = { sessionId: 'session-A' }, B = { sessionId: 'session-B' };
 const sample = '10-14 01:02:03.004 61 62 E C04707 Work: 发生错误\r\n\r\n原文\n10-14 01:02:04.000 61 62 I C04707 Work: 恢复\n';
@@ -85,4 +85,18 @@ test('浏览器分块导入失败会取消原上传，新的重试可完整写�
     const result = op === 'begin' ? await library.begin(body, scope) : op === 'chunk' ? await library.chunk(parsed.searchParams.get('id'), +parsed.searchParams.get('index'), Buffer.from(options.body), scope) : op === 'finish' ? await library.finish(body.id, scope) : (aborts++, await library.abort(body.id, scope)); return Response.json(result);
   };
   try { const file = new File([sample], 'retry.log'); await assert.rejects(importLogFile(file, A.sessionId), /写入失败/); assert.equal(aborts, 1); const finished = await importLogFile(file, A.sessionId); assert.equal((await library.list(0, 20, A)).total, 1); assert.equal((await library.list(0, 20, B)).total, 0); assert.equal(finished.sha256, createHash('sha256').update(sample).digest('hex')); } finally { globalThis.fetch = previous; }
+}));
+
+test('宿主 synthetic URL 通过原 Host 校验同源写入，跨源仍拒绝', async () => {
+ const req = origin => new Request('http://dsh.internal/api/example', {method:'POST',headers:{origin,host:'127.0.0.1:55397'},body:'{}'});
+ assert.deepEqual(await mutationBody(req('http://127.0.0.1:55397')),{});
+ await assert.rejects(mutationBody(req('http://evil.example')), /来源/);
+ await assert.rejects(mutationBody(req('http://127.0.0.1:9999')), /来源/);
+ await assert.rejects(mutationBody(req('https://127.0.0.1:55397')), /来源/);
+});
+
+test('flat session list includes legacy groups; selection analysis rejects other sessions',()=>fixture(async library=>{
+ const group=await library.createGroup('legacy',A);const one=await upload(library,A,'grouped.log',sample,{groupId:group.id});const two=await upload(library,A,'flat.log');
+ assert.equal((await library.list(0,20,A)).total,2);const result=await library.analysis({ids:[one.id,two.id]},A);assert.equal(result.files.length,2);
+ await assert.rejects(library.analysis({ids:[one.id]},B));await assert.rejects(library.analysis({ids:[one.id,one.id]},A),/不同/);
 }));

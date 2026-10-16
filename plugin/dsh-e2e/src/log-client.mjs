@@ -42,6 +42,9 @@ export function appendLogDraft(input, text) {
   input.focus?.();
 }
 
-export function directoryAnalysisPrompt(value) {
-  return `请分析当前会话中以下目录的日志，只分析日志，不操作手机或重新执行测试。\n\n目录名称：${value.name}\n日志目录：${value.directory}\n日志文件清单：${value.manifestPath}\n请先读取清单，按需读取其中的正文路径，并在结论中引用文件名和行号。\n\n应用 / 包名：全部\n现象 / Bug 描述：\n其它补充：`;
+export function selectionAnalysisPrompt(value) {
+  return `请分析当前会话中以下选定日志，只分析日志，不操作手机或重新执行测试。\n\n文件集合：${value.name}\n日志文件清单：${value.manifestPath}\n请先读取清单，按需读取其中的正文路径，并在结论中引用文件名和行号。\n\n应用 / 包名：未指定\n现象 / Bug 描述：\n其它补充：`;
 }
+
+// Compatibility for older clients.
+export const directoryAnalysisPrompt = selectionAnalysisPrompt;

@@ -1,6 +1,6 @@
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
 import { getHarmonyDeviceManager } from "@/lib/harmony";
-import { resolveHarmonyStorage } from "@/lib/harmony/artifacts";
+import { resolveHarmonyStorage, markMediaOrigin } from "@/lib/harmony/artifacts";
 import { HarmonyError } from "@/lib/harmony/errors";
 import { hasJsonContentType } from "@/lib/request-security";
 import { harmonyErrorResponse, noStoreJson, requireHarmonyAccess } from "../_shared";
@@ -55,12 +55,12 @@ export async function POST(request: Request) {
     const manager = getHarmonyDeviceManager();
     if (body.action === "capture_screenshot") {
       const artifact = await manager.captureScreenshotArtifact({ serial, signal: request.signal });
-      return noStoreJson({ artifact });
+      return noStoreJson({ artifact: await markMediaOrigin(artifact, "manual") });
     }
     const ownerId = requiredString(body, "ownerId", 160);
     const leaseToken = optionalString(body, "leaseToken", 256);
     if (body.action === "start_recording") {
-      const recording = await manager.startRecording({ serial, ownerId, ...(leaseToken ? { leaseToken } : {}), signal: request.signal });
+      const recording = await manager.startRecording({ serial, ownerId, source: "manual", ...(leaseToken ? { leaseToken } : {}), signal: request.signal });
       return noStoreJson({ recording: {
         serial: recording.serial,
         recordingId: recording.recordingId,

@@ -8,7 +8,7 @@
 
 ## 支持边界
 
-当前源码候选版本是 **dshHarmony 0.5.0-rc.4 + dshE2E 0.4.0-rc.3**，当前发行修订为 **r2**，精确 tag 为 `v0.5.0-rc.4-e2e-0.4.0-rc.3-r2`，保持宿主 **0.2.0-rc.2**。r2 更新安装包完整性、版本表与安装说明，不改变插件运行源码或日志格式。各层验收与未测范围见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
+当前源码候选版本是 **dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.4**，精确 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.4`，保持宿主 **0.2.0-rc.2**。本次改变日志列表、实时缓冲和手动媒体交互。各层验收与未测范围见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
 
 | 项目 | 要求 |
 |---|---|
@@ -40,12 +40,12 @@
 - 源码：从已授权私有仓库获取明确 tag/SHA；脏工作树更新前保留变化，不盲目 `git pull`。
 - ZIP：下载私有 Release 的 `*-windows-source.zip` 与 `.sha256`，用 `Get-FileHash -Algorithm SHA256` 比较，解压到**长期保留的安装来源目录**。内置 `release-manifest.json` 每文件哈希，预检再次核对。源文件发行仍需联网获取依赖和构建，不是完全离线安装包。
 
-r2 文件名含 `-r2-windows-source.zip`。使用有权访问仓库的账号、连接器或已登录 GitHub CLI 下载；遇到登录问题交由用户完成，不提取浏览器 cookie 或打印令牌。核对 `.sha256` 中的文件名与实际 ZIP 相符，不能用旧版校验文件验证新包。安装前可调整解压目录名称；正式登记后它是持久来源，移动/删除会破坏路径依赖，需要退出宿主后重新登记。
+文件名含 `-windows-source.zip`。使用有权访问仓库的账号、连接器或已登录 GitHub CLI 下载；遇到登录问题交由用户完成，不提取浏览器 cookie 或打印令牌。核对 `.sha256` 中的文件名与实际 ZIP 相符，不能用旧版校验文件验证新包。安装前可调整解压目录名称；正式登记后它是持久来源，移动/删除会破坏路径依赖，需要退出宿主后重新登记。
 
-例如在下载目录校验 r2 包：
+例如在下载目录校验候选包：
 
 ```powershell
-$installArchive = '.\dsh-harmony-0.5.0-rc.4-e2e-0.4.0-rc.3-r2-windows-source.zip'
+$installArchive = '.\dsh-harmony-0.5.0-rc.5-e2e-0.4.0-rc.4-windows-source.zip'
 $installExpectedHash = ((Get-Content -LiteralPath ($installArchive + '.sha256') -Raw).Trim() -split '\s+')[0]
 if ($installExpectedHash -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -LiteralPath $installArchive -Algorithm SHA256).Hash -ne $installExpectedHash) {
@@ -160,27 +160,41 @@ DevEco 等外部投屏需在其软件关闭设备投屏后释放；DSH 会约 10
 
 参考 [dshE2E 使用说明](../plugin/dsh-e2e/USAGE.md#操作入口与验收范围)。必须观察到 e2e_phone.run、独立断言、报告写入、日志状态和控制释放；仅看到 status/resolve_app 或面板不能说明测试已经执行。只验当前页明确使用 runMode:verify_current，不能把此前未记录操作算作本次完整流程。验图片实际内容用 verificationMode:visual，并核对当前会话模型的 image 能力与实际验收输入截图；不要把外层 ModLens 读取截图算成 E2E 的视觉断言。直控需要 execution:direct 和 directReason。同会话交接须准确匹配空闲 agent 身份，其他会话仍拒绝。
 
-## 8. 日志包与大文件安装验收
+## 10. 日志导入与大文件安装验收
 
 本轮配套日志协议仍为 2。读取 capabilities 除版本外还应包含 groups/packages/blocks/favorites/analysis-paths；只看到 HTTP 200 或 protocolVersion=2 不足以确认新版后端。
 
 - **普通离线日志**无需手机、模型或 DevEco。支持 UTF-8 TXT/LOG/JSONL；普通文本 GZ 和 ZIP 通过随包纯 JS 依赖及 Node zlib 处理，不安装系统解压程序。
 - **原厂二进制 HiLog**另需本机 HarmonyOS SDK 的 hilogtool 和日志配套字典。解析工具不内嵌、不从旧电脑复制；从当前电脑 SDK 的 hms/toolchains 获取，设置 HILOGTOOL_PATH，或在工作台「更多管理」保存 hilogtool 完整路径。可用 DEVECO_SDK_HOME/OHOS_SDK_HOME/HOS_SDK_HOME/DEVECO_STUDIO_HOME/PATH 发现。
-- 字典随对应设备日志采集；通常为 hilog_dict*.zip。导入器优先使用包内或同目录已导入字典。缺字典/工具保留原包并显示待补充；补入同目录后手动「重新解析」。不能从其它设备随便选一份字典后声称完整还原。
+- 字典随对应设备日志采集；通常为 hilog_dict*.zip。导入器优先使用包内或当前会话已导入字典。缺字典/工具保留原包并显示待补充；补入当前会话后手动「重新解析」。不能从其它设备随便选一份字典后声称完整还原。
 - 验证安装来源含 lib/log-worker.mjs、log-storage.mjs、log-package.mjs、log-parser.mjs 和可解析的 yauzl 依赖。后台线程需从实际安装目录启动，不能依赖开发工作区。
-- 单文件默认临时区；多文件或单个 ZIP/GZ 自动建目录；拖到目录按钮则归入该目录。确认会话 A、B 的目录/文件读取和写入互相隔离。
+- 所有入口进入当前会话平铺列表，默认按导入时间倒序；不新建目录。旧目录文件仍可见。确认会话 A、B 的文件读取和写入互相隔离，选中多个文件可生成分析清单。
 - 打开原文件、100/500/1000 条分页、包名/未知归属过滤、正则、Ctrl+F、详情和收藏；确认新电脑收藏不含旧电脑数据。普通 HiLog 只有 PID 时无法可靠还原历史包名，须显示归属未知。
 - 点 AI 分析只生成草稿。核对其中实际绝对路径和 manifest，使用该宿主的文件读取能力验证可访问；未调用模型时不得报告模型分析通过。日志文件、缓存和路径不能写死用户名或 E 盘。
-- 测试实时日志入口与离线入口双向切换、实时保存到临时区；保持当前会话。导入/浏览/草稿本身不能操作手机。
+- 测试实时日志入口与离线入口双向切换、实时保存到当前会话；保持当前会话。导入/浏览/草稿本身不能操作手机。
 - 上限：文本 256 MiB、压缩包 512 MiB、累计展开 2 GiB；条目最多 10000。UI 默认 500 条、可选 1000 条，正文响应约 1 MiB；行数与字节双限。E2E 任务采集预算维持原值，不随离线导入扩大。
 - 将 Windows 长路径/中文路径、真实 HiLog 字典解析、损坏包、取消、局部成功分别列出。原厂工具在短系统临时目录解析并在结束后清理；无需给 SDK 程序复制整套工程。
 
 完整边界及资源实测见 LOG_WORKBENCH.md 和 VALIDATION.md。另一台实体电脑与其它操作系统没有实测时必须明确记录，不能以本机换目录等同另一电脑通过。
 
-## 9. HDC 配置与投屏恢复
+## 11. HDC 配置与投屏恢复
 
 HDC 是手机连接依赖，插件内嵌的视频组件不能替代它。使用新电脑本机 SDK 的 hdc.exe；不要照抄旧电脑路径。可通过设备设置选择并保存，或在启动宿主前设置 DSH_HARMONY_HDC_PATH；旧的 PIORA_HARMONY_HDC_PATH/HARMONY_HDC_PATH/HDC_PATH 仍兼容。确认路径存在且 hdc list targets -v 返回具体 USB Connected 设备，UART Ready 不算手机在线。
 
 必须在真正宿主验证设备设置保存：前端请求 PUT /api/harmony/config，应成功并将 hdcPath 写入当前 DataHome/storages/dshHarmony/harmony.json，完整重启后仍保留。旧移植版本漏登记 PUT，会显示 Request failed (404)；不能把输入框出现路径当作已保存。升级后所有导出 HTTP 方法均随路由登记。
 
 后端初始化失败时按至少 5 秒间隔重试本机发现，不忙循环；选定同一路径重新保存也会重新校验并重建失败的后端。先恢复设备识别，再验投屏；HDC 缺失、USB Offline、锁屏和外部视频占用是不同故障，不据此批量结束设备进程。
+
+## 12. 手动媒体与附件升级验收
+
+默认仅显示新版本记录为 manual 的手动截图/录像，跨会话保留并按设备分开；自动测试截图记录为 automation。旧文件没有来源标记时不能猜测其来源，用户勾选“查看来源不明的旧记录”后才显示。旁边 .origin.json 是小型来源元数据，应随媒体一起备份；不要给整个旧目录批量标 manual。
+
+点击缩略图应打开预览。验证矩形/箭头/文字/打码、撤销重做和缩放；快捷键见 [媒体指南](MEDIA_WORKBENCH.md)。加入当前对话应得到实际 PNG 草稿附件，批注图文件名以 -annotated.png 结束；检查原文件哈希未变、旧文字和附件保留、切会话不串入新会话、忙碌时明确拒绝。按钮不发送模型消息。老宿主缺少 conversation.createDrafts 或 input.addAttachments 时显示能力不足，不能用复制路径冒充成功。
+
+录屏使用本机私有受限路径与 Range 播放，用户可截取当前帧批注后加入。后台任务收纳在“更多工具”，原接口与运行中任务保留；不要为隐藏入口删除任务数据。不要将真实日志、截图、来源标记、认证 URL 或 profile 备份放进发行 ZIP/提交。
+
+实时缓冲为最近 100000 行，同时受 128 MiB 文本预算限制，字节先满会提前淘汰。必须用实际设备日志检查性能；合成数据或循环重复样本不能冒充设备采集。分别报告环形缓冲耗时、浏览器筛选响应、内存、当前实时连接和历史日志回放，不能把 Node 基准当作整个桌面程序占用。
+
+## 13. 发布前的可见性核验
+
+发布与安装是两个独立动作。发布前用 GitHub API/已认证 CLI 实时确认目标仓库 private 字段，不能凭旧说明推断私有。若 private=false，不上传含原厂视频组件、SDK 派生索引、设备数据或凭据的完整包。按 THIRD_PARTY_NOTICES.md 确认分发范围，由用户选择私有目标或去掉受限资源的公开发行；不要擅自更改仓库可见性。完整包可先交付本地，明确远端未发布，不能将候选 ZIP 已生成写成 GitHub 发布成功。
