@@ -1,3 +1,4 @@
+import './profile-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLogTarget, startLogCollection, logPage, redactLog, logTime } from '../src/logs.mjs';

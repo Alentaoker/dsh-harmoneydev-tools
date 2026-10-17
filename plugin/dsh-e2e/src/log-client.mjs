@@ -8,13 +8,13 @@ export async function libraryRequest(sessionId, path, { params, body, rawBody, .
   if (!response.ok || value.error) throw Error(value.error || '日志库不可用，请确认 dshE2E 已启用并完整重启宿主');
   return value;
 }
-export async function importLogFile(file, sessionId, { signal, onProgress = () => {}, sourceKind = 'import', snapshot, groupId } = {}) {
-  if (!file.size || file.size > (/\.(zip|gz)$/i.test(file.name) ? 512 : 256) * 1024 * 1024) throw Error('明文每份最多 256 MiB，ZIP / GZ 每份最多 512 MiB');
+export async function importLogFile(file, sessionId, { signal, onProgress = () => {}, sourceKind = 'import', snapshot, groupId, encoding = 'auto' } = {}) {
+  if (!file.size || file.size > (/\.(zip|gz|rar)$/i.test(file.name) ? 512 : 256) * 1024 * 1024) throw Error('明文每份最多 256 MiB，ZIP / GZ / RAR 每份最多 512 MiB');
   let id;
   try {
     signal?.throwIfAborted();
     // Keep begin observable even if cancellation arrives while the server creates it.
-    const started = await libraryRequest(sessionId, 'begin', { body: { name: file.name, size: file.size, sourceKind, snapshot, groupId } }); id = started.id;
+    const started = await libraryRequest(sessionId, 'begin', { body: { name: file.name, size: file.size, sourceKind, snapshot, groupId, encoding } }); id = started.id;
     for (let start = 0, index = 0; start < file.size; start += 256 * 1024) {
       signal?.throwIfAborted(); const data = await file.slice(start, start + 256 * 1024).arrayBuffer();
       const result = await libraryRequest(sessionId, 'chunk', { params: { id, index: index++ }, method: 'POST', headers: { 'content-type': 'application/octet-stream' }, rawBody: data, signal });

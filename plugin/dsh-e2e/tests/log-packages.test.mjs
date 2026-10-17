@@ -1,3 +1,5 @@
+import { rar4Fixture, rar5Fixture } from './archive-fixtures.mjs';
+import { parseRarListing } from '../src/log-rar.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
@@ -73,4 +75,33 @@ test('常用包名收藏跨会话共享、重启保留；未知字段不覆盖�
   await library.preferences(A, { bundle: 'test.app', label: '测试应用', favorite: true }); assert.equal((await library.preferences(B)).favorites[0].bundle, 'test.app');
   const restarted = createLogLibrary(root); try { assert.equal((await restarted.preferences(A)).favorites.length, 1); await restarted.preferences(A, { bundle: 'test.app', favorite: false }); assert.equal((await library.preferences(B)).favorites.length, 0); } finally { await restarted.dispose(); }
   await assert.rejects(library.preferences(A, { bundle: '../bad', favorite: true }));
+}));
+
+test('RAR4 and RAR5 extract supported logs through bounded stdout and preserve original archive',()=>fixture(async library=>{
+ for(const [name,make] of [['rar4.rar',rar4Fixture],['rar5.rar',rar5Fixture]]){
+  const raw=line('test.app',name),source=make([['logs/device.log',raw],['ignore.exe','never execute']]);
+  const packed=await upload(library,name,source);assert.equal(packed.parsingStatus,'complete');assert.equal(packed.files.length,1);assert.equal(packed.files[0].count,1);assert.equal(packed.files[0].origin.relativePath,'logs/device.log');assert.deepEqual(await readFile((await library.source(packed.id,A)).path),source);
+ }
+}));
+test('RAR listing rejects traversal, links, encryption, duplicate destinations and oversized expansion',()=>{
+ const safe=n=>{if(n.includes('..'))throw Error('unsafe');return n;};
+ const listing=extra=>'Path = device.log\nSize = 5\nFolder = -\nEncrypted = -\n'+extra;
+ for(const text of [listing('Symbolic Link = target'),listing('Encrypted = +'),listing('Split After = +'),listing('Size = 99999999999'),'Path = ../escape.log\nSize = 1',listing('')+'\n\n'+listing('')])assert.throws(()=>parseRarListing(text,safe,{bytes:0},()=>100,1000,100));
+});
+test('UTF-16 GZ and late invalid UTF-8 preserve readable data with explicit encoding or replacement warnings',()=>fixture(async library=>{
+ const original=line('test.app','中文正文'),utf16=Buffer.concat([Buffer.from([255,254]),Buffer.from(original,'utf16le')]);
+ const packed=await upload(library,'utf16.log.gz',gzipSync(utf16));assert.equal(packed.parsingStatus,'complete');assert.equal(packed.files[0].encoding,'utf-16le');assert.ok((await library.getLogs(packed.files[0].id,{},A)).logCollection.warnings.some(w=>w.includes('UTF-16LE')));assert.equal((await library.getLogs(packed.files[0].id,{},A)).entries[0].message,'中文正文');
+ const late=Buffer.concat([Buffer.from((line('test.app','valid')).repeat(1800)),Buffer.from([0xff]),Buffer.from('\n')]);
+ const imperfect=await upload(library,'late.log.gz',gzipSync(late));assert.equal(imperfect.parsingStatus,'partial');assert.equal(imperfect.files.length,1);assert.ok(imperfect.files[0].replacementCharacters>0);assert.ok(imperfect.importWarnings.length);assert.equal(imperfect.files[0].count,1801);
+}));
+test('explicit text encoding is validated and retry can change it without touching the original',()=>fixture(async library=>{
+ await assert.rejects(library.begin({name:'x.log',size:1,encoding:'arbitrary'},A),/编码/);
+ const bytes=Buffer.from([0xd6,0xd0,0xce,0xc4,10]),packed=await upload(library,'gbk.gz',gzipSync(bytes),{encoding:'gb18030'});
+ assert.equal(packed.files[0].encoding,'gb18030');assert.equal((await library.getLogs(packed.files[0].id,{},A)).entries[0].message,'中文');
+ const retry=await library.retryPackage(packed.id,A,'utf-8');assert.ok(retry.files[0].replacementCharacters);assert.equal(retry.parsingStatus,'partial');
+}));
+
+test('GB18030 after a long ASCII prefix is detected from the whole GZ payload',()=>fixture(async library=>{
+ const bytes=Buffer.concat([Buffer.from('prefix\n'.repeat(12000)),Buffer.from([0xd6,0xd0,0xce,0xc4,10])]);
+ const packed=await upload(library,'late-gbk.gz',gzipSync(bytes));assert.equal(packed.parsingStatus,'complete');assert.equal(packed.files[0].encoding,'gb18030');assert.equal((await library.getLogs(packed.files[0].id,{offset:12000},A)).entries[0].message,'中文');
 }));

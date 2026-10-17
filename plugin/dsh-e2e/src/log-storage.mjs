@@ -1,3 +1,4 @@
+import { inspectLogEncoding } from './log-encoding.mjs';
 import { mkdir, readFile, writeFile, appendFile, rename, rm, stat, readdir, open } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createGzip, gzip as zip, gunzip as unzip } from 'node:zlib';
@@ -31,7 +32,9 @@ export function withBundle(entry, snapshot) {
   const e = normalizeLog(entry);
   return { ...e, bundle: e.bundle || snapshot?.bundle || '' };
 }
-export async function indexLog({ directory, snapshot, lenientUTF8 = false }, progress = () => {}) {
+export async function indexLog({ directory, snapshot, lenientUTF8 = false, encoding = 'auto' }, progress = () => {}) {
+  const detected = await inspectLogEncoding(join(directory, 'source.log'), encoding, lenientUTF8);
+  if (!detected.text) throw Error('文件包含二进制内容，不能作为文本读取；原厂 HiLog 请导入 .gz 和配套字典。');
   const blocks = [], apps = new Map();
   let records = [], blockBytes = 0, count = 0, sourceLine = 0, parsed = 0, unparsed = 0, truncatedLines = 0, replacementCharacters = 0, normalizedBytes = 0, storedBytes = 0, firstTimestamp, lastTimestamp;
   const hash = createHash('sha256');
@@ -45,10 +48,10 @@ export async function indexLog({ directory, snapshot, lenientUTF8 = false }, pro
     progress({ phase: '建索引', count, sourceLine });
   }
   async function* source() { for await (const chunk of createReadStream(join(directory, 'source.log'), { highWaterMark: 64 * 1024 })) { hash.update(chunk); yield chunk; } }
-  for await (const { line, truncated } of boundedLogLines(source(), 8192, !lenientUTF8)) {
+  for await (const { line, truncated } of boundedLogLines(source(), 8192, false, detected.encoding, true)) {
     sourceLine++; if (!line.trim()) continue;
     if (truncated) truncatedLines++;
-    if (lenientUTF8) replacementCharacters += line.split('\uFFFD').length - 1;
+    replacementCharacters += line.split('\uFFFD').length - 1;
     const raw = redactLog(line), entry = withBundle(parseImportedLog(raw), snapshot);
     entry.parsed ? parsed++ : unparsed++;
     if (entry.timestamp) { firstTimestamp ||= entry.timestamp; lastTimestamp = entry.timestamp; }
@@ -64,7 +67,7 @@ export async function indexLog({ directory, snapshot, lenientUTF8 = false }, pro
   await flush();
   const index = { version: 1, count, blocks, applications: [...apps.values()], unknown: count - [...apps.values()].reduce((n, app) => n + app.count, 0), snapshot, parsedAt: new Date().toISOString() };
   await writeFile(join(directory, 'storage.json.tmp'), JSON.stringify(index)); await rename(join(directory, 'storage.json.tmp'), join(directory, 'storage.json'));
-  return { count, parsed, unparsed, truncatedLines, dropped: 0, normalizedBytes, bodyStoredBytes: storedBytes, firstTimestamp, lastTimestamp, replacementCharacters, sha256: hash.digest('hex'), storage: 'blocks-v1' };
+  return { count, parsed, unparsed, truncatedLines, dropped: 0, normalizedBytes, bodyStoredBytes: storedBytes, firstTimestamp, lastTimestamp, replacementCharacters, sha256: hash.digest('hex'), storage: 'blocks-v1', encoding: detected.encoding, encodingWarning: detected.encodingWarning };
 }
 export async function readStorage(directory) {
   const path = join(directory, 'storage.json');

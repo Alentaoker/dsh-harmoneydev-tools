@@ -1,3 +1,5 @@
+import { inspectLogEncoding } from './log-encoding.mjs';
+import { extractRar } from './log-rar.mjs';
 import { mkdir, open, readdir, copyFile, stat, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createReadStream, createWriteStream } from 'node:fs';
@@ -9,7 +11,7 @@ import { spawn } from 'node:child_process';
 import yauzl from 'yauzl';
 import { TEXT_BYTES, PACKAGE_BYTES } from './log-storage.mjs';
 export { PACKAGE_BYTES };
-export const packageName = name => /\.(zip|gz)$/i.test(name || '');
+export const packageName = name => /\.(zip|gz|rar)$/i.test(name || '');
 export const dictionaryName = name => /^hilog_dict[^/\\]*\.zip$/i.test(basename(name || ''));
 const TOTAL_BYTES = 2 * 1024 * 1024 * 1024, MAX_ENTRIES = 10000;
 export async function findHilogTool(configured) {
@@ -22,16 +24,13 @@ export async function findHilogTool(configured) {
   return undefined;
 }
 function safeEntry(root, name) {
-  if (!name || name.includes('\\') || name.includes('\0') || /(^|\/)\.\.?(\/|$)/.test(name) || /^[A-Za-z]:/.test(name)) throw Error('压缩包内含不安全路径');
+  if (!name || name.includes('\\') || /[<>:\x00-\x1f\"|?*]/.test(name) || /(^|\/)\.\.?(\/|$)/.test(name) || /^[A-Za-z]:/.test(name)) throw Error('压缩包内含不安全路径');
+  if (name.split('/').some(part => part && (/[. ]$/.test(part) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9]|conin\$|conout\$)(?:\.|$)/i.test(part)))) throw Error('压缩包含 Windows 保留或歧义路径');
   const path = resolve(root, name), rel = relative(root, path);
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw Error('压缩包路径超出解包目录');
   return path;
 }
-async function textFile(path) {
-  const fd = await open(path, 'r');
-  try { const buf = Buffer.alloc(8192), { bytesRead } = await fd.read(buf, 0, buf.length, 0); const text = new TextDecoder('utf-8', { fatal: true }).decode(buf.subarray(0, bytesRead), { stream: bytesRead === buf.length }); return !text.includes('\0'); }
-  catch { return false; } finally { await fd.close(); }
-}
+async function textFile(path, encoding = 'auto') { return (await inspectLogEncoding(path, encoding)).text; }
 async function filesBelow(root) {
   const values = [];
   async function visit(dir) { for (const entry of await readdir(dir, { withFileTypes: true })) { const path = join(dir, entry.name); if (entry.isSymbolicLink()) throw Error('日志包不能包含符号链接'); if (entry.isDirectory()) await visit(path); else if (entry.isFile()) { values.push(path); if (values.length > MAX_ENTRIES) throw Error('日志包文件数量超过 10000'); } } }
@@ -59,7 +58,7 @@ async function extractZip(source, destination, budget, signal) {
       if (entry.uncompressedSize > (packageName(entry.fileName) ? PACKAGE_BYTES : TEXT_BYTES) || budget.bytes + entry.uncompressedSize > TOTAL_BYTES) throw Error('压缩包声明的展开大小超过限制');
       await mkdir(dirname(path), { recursive: true });
       const stream = await new Promise((yes, no) => zip.openReadStream(entry, (error, stream) => error ? no(error) : yes(stream)));
-      await pipeline(stream, byteLimit(budget, dictionaryName(path) ? PACKAGE_BYTES : TEXT_BYTES, entry.crc32), createWriteStream(path, { flags: 'wx' }), { signal }); paths.push(path); zip.readEntry();
+      await pipeline(stream, byteLimit(budget, packageName(entry.fileName) ? PACKAGE_BYTES : TEXT_BYTES, entry.crc32), createWriteStream(path, { flags: 'wx' }), { signal }); paths.push(path); zip.readEntry();
     })().catch(fail); }); zip.readEntry();
   });
   return paths;
@@ -83,12 +82,12 @@ export async function runHilogTool(tool, args, signal, cwd) {
     child.once('close', code => { clearTimeout(timer); if (code !== 0) no(Error('hilogtool 退出码 ' + code + '：' + output.slice(-2000))); else yes(output); });
   });
 }
-export async function importPackage({ source, name, work, signal, dictionaries = [], toolPath, consume, progress = () => {}, runTool = runHilogTool }) {
+export async function importPackage({ source, name, work, signal, dictionaries = [], toolPath, consume, progress = () => {}, runTool = runHilogTool, encoding = 'auto' }) {
   const budget = { bytes: 0 }, children = [], warnings = [], text = [], binary = [], dicts = [...dictionaries];
   let toolWork;
   await mkdir(work, { recursive: true });
   try {
-    const paths = /\.zip$/i.test(name) ? await extractZip(source, join(work, 'extracted'), budget, signal) : [source];
+    const paths = /\.zip$/i.test(name) ? await extractZip(source, join(work, 'extracted'), budget, signal) : /\.rar$/i.test(name) ? await extractRar(source, join(work, 'extracted'), budget, signal, { safeEntry, byteLimit, textBytes: TEXT_BYTES, packageBytes: PACKAGE_BYTES, totalBytes: TOTAL_BYTES, maxEntries: MAX_ENTRIES }) : [source];
     for (const path of paths) if (dictionaryName(path)) dicts.push(path);
     for (let i = 0; i < paths.length; i++) {
       signal.throwIfAborted(); const path = paths[i]; if (dictionaryName(path)) continue;
@@ -98,10 +97,10 @@ export async function importPackage({ source, name, work, signal, dictionaries =
         const decoded = join(work, 'inflated', String(i) + '.log'); await mkdir(dirname(decoded), { recursive: true });
         try { await pipeline(createReadStream(path), createGunzip(), byteLimit(budget), createWriteStream(decoded), { signal }); }
         catch (error) { if (/限制|取消|abort/i.test(error.message)) throw error; warnings.push(originalName + '：无法解压，保留原包'); continue; }
-        if (await textFile(decoded)) text.push({ path: decoded, name: originalName.replace(/\.gz$/i, '.log'), relativePath: originalName });
+        if (await textFile(decoded, encoding)) text.push({ path: decoded, name: originalName.replace(/\.gz$/i, '.log'), relativePath: originalName });
         else binary.push({ path, name: basename(originalName) });
-      } else if (await textFile(path)) text.push({ path, name: basename(originalName), relativePath: originalName });
-      else warnings.push(originalName + '：不是 UTF-8 文本，未强制当作日志解析');
+      } else if (await textFile(path, encoding)) text.push({ path, name: basename(originalName), relativePath: originalName });
+      else warnings.push(originalName + '：包含二进制内容，未强制当作文本；原厂 HiLog 请保留 .gz 与配套字典');
     }
     let parsingStatus = 'complete';
     if (binary.length) {
@@ -126,7 +125,7 @@ export async function importPackage({ source, name, work, signal, dictionaries =
           const produced = await filesBelow(output); let bytes = 0;
           for (const file of produced) { bytes += (await stat(file)).size; if (bytes > TOTAL_BYTES) throw Error('HiLog 解析产物超过 2 GiB'); }
           if (produced.length) {
-            for (const path of produced) if (/\.(txt|log|jsonl)$/i.test(path) || await textFile(path)) text.push({ path, name: basename(path), relativePath: relative(output, path).replaceAll('\\', '/'), decoded: true });
+            for (const path of produced) if (/\.(txt|log|jsonl)$/i.test(path) || await textFile(path, encoding)) text.push({ path, name: basename(path), relativePath: relative(output, path).replaceAll('\\', '/'), decoded: true });
             decoded = true; if (/unknown log|OpenUuidFile fail|\b300\b/i.test(message)) { parsingStatus = 'partial'; warnings.push('部分日志与字典不匹配，请核对配套字典；已保留可解析结果。'); } break;
           }
         }
@@ -135,7 +134,7 @@ export async function importPackage({ source, name, work, signal, dictionaries =
     }
     for (let i = 0; i < text.length; i++) {
       signal.throwIfAborted(); progress({ phase: '导入正文', current: i + 1, total: text.length });
-      try { children.push(await consume(text[i])); } catch (error) { signal.throwIfAborted(); warnings.push(text[i].name + '：' + error.message); parsingStatus = 'partial'; }
+      try { const child = await consume(text[i]); children.push(child); if (child.replacementCharacters) { warnings.push(text[i].name + '：部分字节无法按所选编码还原，可读副本使用替换字符；原始文件保留。'); parsingStatus = 'partial'; } } catch (error) { signal.throwIfAborted(); warnings.push(text[i].name + '：' + error.message); parsingStatus = 'partial'; }
     }
     if (!children.length && !binary.length) { parsingStatus = 'partial'; warnings.push('包内没有可识别的日志文本，原包已保留。'); }
     return { children, warnings, parsingStatus };

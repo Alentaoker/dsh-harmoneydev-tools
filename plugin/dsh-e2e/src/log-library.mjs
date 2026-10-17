@@ -1,3 +1,4 @@
+import { validateLogEncoding } from './log-encoding.mjs';
 import { mkdir, writeFile, appendFile, readFile, readdir, rm, stat, rename, cp, realpath, copyFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
@@ -56,14 +57,14 @@ export function createLogLibrary(root, options = {}) {
           const destination = join(dir, 'dictionary-' + file.id + '.zip'); await copyFile((await library.source(file.id, scope)).path, destination); dicts.push(destination);
         }
         const prefs = await preferences();
-        const context = JSON.stringify({ version: 1, dictionaries: existing.filter(f => dictionaryName(f.name)).map(f => f.sha256).sort(), tool: prefs.hilogtool || options.hilogtool || '' });
+        const context = JSON.stringify({ version: 2, encoding: value.encoding || 'auto', dictionaries: existing.filter(f => dictionaryName(f.name)).map(f => f.sha256).sort(), tool: prefs.hilogtool || options.hilogtool || '' });
         const reused = !value.retry && existing.find(f => f.sha256 === value.sha256 && f.isPackage && f.parsingStatus === 'complete' && f.parsingContext === context);
         if (reused) { await rm(dir, { recursive: true, force: true }); return { ...reused, reused: true, files: existing.filter(f => reused.childIds?.includes(f.id)) }; }
-        const imported = await importPackage({ source: join(dir, 'source.log'), name: value.name, work: join(dir, 'package-work'), signal, dictionaries: dicts, toolPath: prefs.hilogtool || options.hilogtool, runTool: options.runHilogTool, progress,
+        const imported = await importPackage({ source: join(dir, 'source.log'), name: value.name, work: join(dir, 'package-work'), signal, dictionaries: dicts, toolPath: prefs.hilogtool || options.hilogtool, runTool: options.runHilogTool, encoding: value.encoding || 'auto', progress,
           async consume(item) {
             const duplicate = value.parsingContext === context && existing.find(f => f.origin?.packageId === value.id && f.origin?.relativePath === item.relativePath);
             if (duplicate) return duplicate;
-            const started = await library.begin({ name: item.name.slice(0, 256), size: (await stat(item.path)).size, groupId: value.groupId, lenientUTF8: item.decoded, origin: { packageId: value.id, relativePath: item.relativePath } }, scope, true);
+            const started = await library.begin({ name: item.name.slice(0, 256), size: (await stat(item.path)).size, groupId: value.groupId, lenientUTF8: item.decoded, encoding: item.decoded ? 'auto' : value.encoding || 'auto', origin: { packageId: value.id, relativePath: item.relativePath } }, scope, true);
             const abort = () => { void library.abort(started.id, scope).catch(() => {}); }; signal.addEventListener('abort', abort, { once: true });
             try { let i = 0; for await (const chunk of createReadStream(item.path, { highWaterMark: 256 * 1024 })) { signal.throwIfAborted(); await library.chunk(started.id, i++, chunk, scope); } return await library.finish(started.id, scope, true); }
             catch (error) { await library.abort(started.id, scope).catch(() => {}); throw error; }
@@ -78,13 +79,13 @@ export function createLogLibrary(root, options = {}) {
       }
       const duplicate = (await files(scope)).find(file => file.name === value.name && file.sha256 === value.sha256 && file.storage === 'blocks-v1' && !value.origin && !file.origin && JSON.stringify(file.snapshot || {}) === JSON.stringify(value.snapshot || {}));
       if (duplicate) { await rm(dir, { recursive: true, force: true }); return { ...duplicate, reused: true }; }
-      const result = await runWorker('index', { directory: dir, snapshot: value.snapshot, lenientUTF8: value.lenientUTF8 }, signal, progress);
+      const result = await runWorker('index', { directory: dir, snapshot: value.snapshot, lenientUTF8: value.lenientUTF8, encoding: value.encoding || 'auto' }, signal, progress);
       signal.throwIfAborted();
       let sourceStoredBytes = value.size, sourceCompression;
       if (value.size >= 1024 * 1024) { progress({ phase: '压缩原文' }); sourceStoredBytes = await compactSource(dir); sourceCompression = 'gzip'; }
       signal.throwIfAborted();
       const completed = { ...clean(value), ...result, status: 'ready', availableAt: new Date().toISOString(), sourceCompression, storedBytes: sourceStoredBytes + result.bodyStoredBytes, format: result.parsed ? 'HiLog / JSONL 自动识别' : '原文行', timeBasis: '日志中的设备时间；缺年份按最近年份推定，未解析行不参与时间过滤' };
-      if (result.replacementCharacters) completed.importWarnings = ['工具输出包含替换字符；原始日志包保留，可核对配套字典与编码。'];
+      completed.importWarnings = [result.encodingWarning, result.replacementCharacters ? '部分字节无法还原，可读副本使用替换字符；原始字节保留，请核对编码和配套字典。' : undefined].filter(Boolean);
       await saveMetadata(dir, completed); return completed;
     } catch (error) {
       if (value.retry || value.isPackage) { await saveMetadata(dir, { ...clean(value), status: 'ready', count: 0, parsed: 0, unparsed: 0, parsingStatus: value.cancelled ? 'cancelled' : 'failed', importWarnings: [error.message] }); }
@@ -189,16 +190,17 @@ export function createLogLibrary(root, options = {}) {
       const snapshotBefore = new Date().toISOString(), values = await files(scope, { ...options, before: options.before || snapshotBefore });
       return { protocolVersion: 2, files: values.slice(offset, offset + limit), total: values.length, offset, snapshotBefore, nextOffset: offset + limit < values.length ? offset + limit : null, sessionId: owner(scope) };
     },
-    async begin({ name, size, sourceKind = 'import', snapshot, groupId = '', origin, lenientUTF8 = false }, scope, internal = false) {
+    async begin({ name, size, sourceKind = 'import', snapshot, groupId = '', origin, lenientUTF8 = false, encoding = 'auto' }, scope, internal = false) {
+      validateLogEncoding(encoding);
       const sessionId = owner(scope), isPackage = !internal && sourceKind === 'import' && packageName(name);
       if (disposed) throw Error('日志库已经关闭');
-      if (typeof name !== 'string' || !name.trim() || name.length > 256 || !Number.isSafeInteger(size) || size < 1 || size > (isPackage ? PACKAGE_BYTES : TEXT_BYTES)) throw Error('明文每份最多 256 MiB，ZIP / GZ 每份最多 512 MiB');
+      if (typeof name !== 'string' || !name.trim() || name.length > 256 || !Number.isSafeInteger(size) || size < 1 || size > (isPackage ? PACKAGE_BYTES : TEXT_BYTES)) throw Error('明文每份最多 256 MiB，ZIP / GZ / RAR 每份最多 512 MiB');
       if (!['import', 'realtime'].includes(sourceKind)) throw Error('日志来源无效');
       if (snapshot !== undefined && (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || JSON.stringify(snapshot).length > 3000)) throw Error('日志快照信息无效');
       if (!internal && uploads.size >= 2) throw Error('已有日志导入正在进行，请等待完成');
       if (groupId) await groupMetadata(groupId, scope);
       else if (isPackage) groupId = (await library.createGroup(name.replace(/\.(zip|gz)$/i, ''), scope)).id;
-      const id = randomUUID(), dir = directory(id, scope), value = { id, sessionId, name: name.split(/[\\/]/).pop(), sourceKind, snapshot, groupId, origin, lenientUTF8: internal && lenientUTF8, size, received: 0, nextChunk: 0, createdAt: new Date().toISOString(), status: 'importing', isPackage, busy: true };
+      const id = randomUUID(), dir = directory(id, scope), value = { id, sessionId, name: name.split(/[\\/]/).pop(), sourceKind, snapshot, groupId, origin, lenientUTF8: internal && lenientUTF8, encoding, size, received: 0, nextChunk: 0, createdAt: new Date().toISOString(), status: 'importing', isPackage, busy: true };
       value.controller = new AbortController(); value.hash = createHash('sha256'); uploads.set(id, value);
       try { await mkdir(dir, { recursive: true }); await checked(dir); await writeFile(join(dir, 'source.log'), ''); await saveMetadata(dir, value); value.busy = false; return clean(value); }
       catch (error) { uploads.delete(id); throw error; }
@@ -219,9 +221,11 @@ export function createLogLibrary(root, options = {}) {
     },
     async importStatus(id, scope) { const value = uploadFor(id, scope); return value.progress || { phase: value.busy ? '等待后台处理' : '上传中', received: value.received }; },
     async abort(id, scope) { const value = uploadFor(id, scope); value.cancelled = true; value.controller?.abort(Error('导入已取消')); if (value.busy) return { pending: true }; await cleanupCancelled(value); return { removed: true }; },
-    async retryPackage(id, scope) {
+    async retryPackage(id, scope, encoding) {
+      if (encoding !== undefined) validateLogEncoding(encoding);
       const value = await metadata(id, scope); if (!value.isPackage || dictionaryName(value.name)) throw Error('此文件无需重新解析');
       if (uploads.has(id)) throw Error('正在解析此包');
+      if (encoding !== undefined) value.encoding = encoding;
       value.controller = new AbortController(); value.busy = true; value.retry = true; uploads.set(id, value);
       const result = processing.then(() => processUpload(value, scope)); processing = result.catch(() => {}); return result;
     },
@@ -256,6 +260,7 @@ export function createLogLibrary(root, options = {}) {
         value = await migrating.get(migrationKey);
       }
       const warnings = ['原始文件保留在本机；查看器中的敏感字段脱敏，超长行预览最多 8192 字符。' + (value.timeBasis || '')];
+      warnings.push(...(value.importWarnings || []));
       if (value.truncatedLines) warnings.push(`${value.truncatedLines} 条超长行仅在原始文件完整保留`);
       if (value.dropped) warnings.push(`${value.dropped} 条超过旧版结构化容量，原始文件仍保留`);
       if (value.snapshot?.evicted || value.snapshot?.dropped) warnings.push(`实时连接累计：缓存淘汰 ${value.snapshot.evicted || 0} 条，接收省略 ${value.snapshot.dropped || 0} 条；不是此文件时间区间的精确缺失数量`);

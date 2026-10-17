@@ -6,10 +6,10 @@ import { compileLogQuery, publicLog, validatePage } from './log-query.mjs';
 
 export const DEFAULT_LOG_BYTES = 32 * 1024 * 1024;
 const QUEUE_BYTES = 256 * 1024;
-export async function* boundedLogLines(stream, maximum = 40000, strictUTF8 = false) {
-  const decoder = strictUTF8 ? new TextDecoder('utf-8', { fatal: true }) : new StringDecoder('utf8'); let carry = '', truncated = false;
+export async function* boundedLogLines(stream, maximum = 40000, strictUTF8 = false, encoding = 'utf-8', rejectBinary = false) {
+  const decoder = new TextDecoder(encoding, { fatal: strictUTF8 }); let carry = '', truncated = false;
   function* accept(text, final = false) {
-    if (strictUTF8 && text.includes('\0')) throw Error('文件含 NUL，可能是 UTF-16 或二进制；请先另存为 UTF-8 文本');
+    if ((strictUTF8 || rejectBinary) && text.includes('\0')) throw Error('文件含 NUL，可能是 UTF-16 或二进制；请先另存为 UTF-8 文本');
     let start = 0;
     for (let at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', start)) {
       const part = text.slice(start, at);
@@ -23,8 +23,8 @@ export async function* boundedLogLines(stream, maximum = 40000, strictUTF8 = fal
     if (final && (carry || truncated)) { yield { line: carry.replace(/\r$/, ''), truncated }; carry = ''; }
   }
   try {
-    for await (const chunk of stream) yield* accept(strictUTF8 ? decoder.decode(chunk, { stream: true }) : decoder.write(chunk));
-    yield* accept(strictUTF8 ? decoder.decode() : decoder.end(), true);
+    for await (const chunk of stream) yield* accept(decoder.decode(chunk, { stream: true }));
+    yield* accept(decoder.decode(), true);
   } catch (error) { if (error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') throw Error('文件不是有效 UTF-8；不支持 UTF-16，请先另存为 UTF-8 文本'); throw error; }
 }
 export async function createLogArchive(job, warning) {

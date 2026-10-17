@@ -8,16 +8,19 @@
 | plugin | [dshE2E](plugin/dsh-e2e/README.md) | 有明确验收条件的手机任务、报告、流程复用和会话日志工作台 | [使用](plugin/dsh-e2e/USAGE.md) · [安装](plugin/dsh-e2e/INSTALLATION.md) · [AI 安装](plugin/dsh-e2e/AI_INSTALLATION.md) |
 | skill | [hdesign-to-arkts](skill/hdesign-to-arkts/README.md) | 通过 Pixso MCP 确认设计目标、提取属性、映射 SDK 资源，再接续 ArkTS 开发 | [使用](skill/hdesign-to-arkts/USAGE.md) · [安装](skill/hdesign-to-arkts/INSTALLATION.md) · [AI 覆盖安装](skill/hdesign-to-arkts/AI_INSTALLATION.md) · [新旧差异](skill/hdesign-to-arkts/CHANGES.md) |
 
-当前候选配套版本：**dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.4**；Windows x64、DSH 0.2.0-rc.2、Node24。日志只按会话隔离，文件、多选、拖放、ZIP/GZ 统一进入按导入时间排列的列表，无需新建目录。实时缓冲提升到最近 100000 行并设 128 MiB 文本预算，采用增量环形存储与虚拟渲染。
+当前候选配套版本：**dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.5**；Windows x64、DSH 0.2.0-rc.2、Node24。日志只按会话隔离，文件、多选、拖放、ZIP/GZ/RAR 统一进入按导入时间排列的列表，无需新建目录。实时缓冲提升到最近 100000 行并设 128 MiB 文本预算，采用增量环形存储与虚拟渲染。
+
+新增 RAR4/RAR5 解包及 UTF-16、GB18030/GBK 编码识别，可指定编码重试；[修复与验证记录](docs/ARCHIVE_ENCODING_FIX_20261017.md)。
 
 手动截图与录屏跨会话保留，AI/测试产物不混入手动列表；点击截图可预览、缩放、批注，并把当前标注图加入当前对话。预览内支持 V/R/A/T/B、撤销重做、缩放与 Ctrl+Enter。旧来源不明媒体可单独查看，不擅自归为手动。任务、文件、数据库、命令、测试、语音等收进更多工具，原接口和数据保留。
 
-[下载本候选版](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.5-e2e-0.4.0-rc.4) · [实施计划与验收](docs/WORKBENCH_PLAN.md) · [日志指南](docs/LOG_WORKBENCH.md) · [截图快捷键](docs/MEDIA_WORKBENCH.md) · [AI 安装](docs/AI_INSTALLATION.md) · [AI 升级和回退](docs/AI_UPGRADE.md) · [验证记录](docs/VALIDATION.md)
+[下载本候选版](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.5-e2e-0.4.0-rc.5) · [实施计划与验收](docs/WORKBENCH_PLAN.md) · [日志指南](docs/LOG_WORKBENCH.md) · [截图快捷键](docs/MEDIA_WORKBENCH.md) · [AI 安装](docs/AI_INSTALLATION.md) · [AI 升级和回退](docs/AI_UPGRADE.md) · [验证记录](docs/VALIDATION.md)
 
 ## 配套版本与进度
 
 | 配套版本 | 主要变化 | 验证记录 |
 |---|---|---|
+| Harmony rc.5 / E2E rc.5 | RAR4/5、UTF-16/GB18030、异常字节警告 | [真实日志与编码验收](docs/ARCHIVE_ENCODING_FIX_20261017.md) |
 | Harmony rc.5 / E2E rc.4 | 会话平铺、10 万行、手动媒体预览批注与对话附件、任务收纳 | [本轮真实设备与宿主验收](docs/WORKBENCH_VALIDATION_20261017.md) |
 | Harmony rc.4 / E2E rc.3 r2 | 补齐发行源码、独立目录安装与指南 | [可移植性](docs/PORTABILITY.md) |
 | Harmony rc.4 / E2E rc.3 | 压缩日志、字典、索引、布局、HDC 保存修复 | [历史验证](docs/VALIDATION.md) |

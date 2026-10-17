@@ -20,7 +20,7 @@ export function apply(ctx) {
 }
 export function registerRoutes(ctx, service) {
   for (const [path, methods, handler] of [
-    ['/api/dsh-e2e/log-library/capabilities', ['GET'], request => ({ protocolVersion: 2, features: ['groups', 'packages', 'blocks', 'favorites', 'analysis-paths'], limits: { textBytes: 268435456, packageBytes: 536870912, expandedBytes: 2147483648, pageLines: 1000 }, sessionId: requestScope(request, true).sessionId, storage: 'session', plugin: 'dshE2E' })],
+    ['/api/dsh-e2e/log-library/capabilities', ['GET'], request => ({ protocolVersion: 2, features: ['groups', 'packages', 'blocks', 'favorites', 'analysis-paths', 'rar', 'text-encodings'], limits: { textBytes: 268435456, packageBytes: 536870912, expandedBytes: 2147483648, pageLines: 1000 }, sessionId: requestScope(request, true).sessionId, storage: 'session', plugin: 'dshE2E' })],
     ['/api/dsh-e2e/log-library/groups', ['GET'], request => service.logLibrary.groups(requestScope(request, true))],
     ['/api/dsh-e2e/log-library/delete-group', ['POST'], async request => service.logLibrary.deleteGroup((await mutationBody(request)).id, requestScope(request, true))],
     ['/api/dsh-e2e/log-library/create-group', ['POST'], async request => service.logLibrary.createGroup((await mutationBody(request)).name, requestScope(request, true))],
@@ -28,7 +28,7 @@ export function registerRoutes(ctx, service) {
     ['/api/dsh-e2e/log-library/move', ['POST'], async request => { const body = await mutationBody(request, 512 * 1024); return service.logLibrary.move(body.ids, body.groupId, requestScope(request, true)); }],
     ['/api/dsh-e2e/log-library/preferences', ['GET', 'POST'], async request => service.logLibrary.preferences(requestScope(request, true), request.method === 'POST' ? await mutationBody(request) : undefined)],
     ['/api/dsh-e2e/log-library/analysis', ['POST'], async request => service.logLibrary.analysis(await mutationBody(request), requestScope(request, true))],
-    ['/api/dsh-e2e/log-library/retry-package', ['POST'], async request => service.logLibrary.retryPackage((await mutationBody(request)).id, requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/retry-package', ['POST'], async request => { const body = await mutationBody(request); return service.logLibrary.retryPackage(body.id, requestScope(request, true), body.encoding); }],
     ['/api/dsh-e2e/log-library/import-status', ['GET'], request => service.logLibrary.importStatus(new URL(request.url).searchParams.get('id'), requestScope(request, true))],
     ['/api/dsh-e2e/log-library/list', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.list(p.get('offset') || 0, p.get('limit') || 20, requestScope(request, true), { query: p.get('query') || '', sourceKind: p.get('sourceKind') || '', sort: p.get('sort') || 'newest', ...(p.has('groupId') ? { groupId: p.get('groupId') } : {}) }); }],
     ['/api/dsh-e2e/log-library/info', ['GET'], request => service.logLibrary.info(new URL(request.url).searchParams.get('id'), requestScope(request, true))],
@@ -59,7 +59,7 @@ export function registerRoutes(ctx, service) {
     catch (error) { return Response.json({ error: error.message }, { status: 400 }); }
   } }), 'dshE2E: filtered log export ' + path);
   ctx.effect(() => ctx.connection.fetch.register({ path: '/api/dsh-e2e/log-library/source', methods: ['GET'], requestBody: 'buffered', async fetch(request) {
-    try { const value = await service.logLibrary.source(new URL(request.url).searchParams.get('id'), requestScope(request, true)); const source = createReadStream(value.path); return new Response(Readable.toWeb(value.compressed ? source.pipe(createGunzip()) : source), { headers: { 'content-type': /\.(zip|gz)$/i.test(value.name) ? 'application/octet-stream' : 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(value.name), 'x-content-type-options': 'nosniff' } }); }
+    try { const value = await service.logLibrary.source(new URL(request.url).searchParams.get('id'), requestScope(request, true)); const source = createReadStream(value.path); return new Response(Readable.toWeb(value.compressed ? source.pipe(createGunzip()) : source), { headers: { 'content-type': /\.(zip|gz|rar)$/i.test(value.name) ? 'application/octet-stream' : 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(value.name), 'x-content-type-options': 'nosniff' } }); }
     catch (error) { return Response.json({ error: error.message }, { status: 404 }); }
   } }), 'dshE2E: original log');
   ctx.effect(() => ctx.connection.fetch.register({ path: '/api/dsh-e2e/artifact', methods: ['GET'], requestBody: 'buffered', async fetch(request) {

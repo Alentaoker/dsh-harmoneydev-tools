@@ -8,7 +8,7 @@
 
 ## 支持边界
 
-当前源码候选版本是 **dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.4**，精确 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.4`，保持宿主 **0.2.0-rc.2**。本次改变日志列表、实时缓冲和手动媒体交互。各层验收与未测范围见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
+当前源码候选版本是 **dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.5**，精确 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.5`，保持宿主 **0.2.0-rc.2**。本次改变日志列表、实时缓冲和手动媒体交互。各层验收与未测范围见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
 
 | 项目 | 要求 |
 |---|---|
@@ -45,7 +45,7 @@
 例如在下载目录校验候选包：
 
 ```powershell
-$installArchive = '.\dsh-harmony-0.5.0-rc.5-e2e-0.4.0-rc.4-windows-source.zip'
+$installArchive = '.\dsh-harmony-0.5.0-rc.5-e2e-0.4.0-rc.5-windows-source.zip'
 $installExpectedHash = ((Get-Content -LiteralPath ($installArchive + '.sha256') -Raw).Trim() -split '\s+')[0]
 if ($installExpectedHash -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -LiteralPath $installArchive -Algorithm SHA256).Hash -ne $installExpectedHash) {
@@ -198,3 +198,9 @@ HDC 是手机连接依赖，插件内嵌的视频组件不能替代它。使用�
 ## 13. 发布前的可见性核验
 
 发布与安装是两个独立动作。发布前用 GitHub API/已认证 CLI 实时确认目标仓库 private 字段，不能凭旧说明推断私有。核对 THIRD_PARTY_NOTICES.md 及用户明确确认的分发范围；本候选版由仓库所有者于 2026-10-17 明确确认公开上传完整包，不再重复要求同一确认。不要擅自更改仓库可见性。任何可见性均不上传本机设备日志、截图、配置或凭据。发布后重新下载核对哈希、标签提交与 prerelease 状态，不能将候选 ZIP 已生成写成 GitHub 发布成功。
+
+## RAR 与文本编码验收补充
+
+本版本要求 lockfile 的 7z-bin 26.4.0，完整 7z.exe/7z.dll（Windows x64）用于 RAR；7za 无 RAR 支持，不能代替。依赖仍由 npm ci 安装，不要求用户预装 WinRAR。安装依赖后检查当前平台二进制存在、可列出 RAR，再做实际导入；源码包不捆绑 node_modules。上游许可及来源见 THIRD_PARTY_NOTICES.md。
+
+验收 .rar 文件选择/拖入、RAR4/5、UTF-8/UTF-16/GB18030 的 GZ、编码下拉框与重新解析。旧版“严格 UTF-8”失败不能用重命名后缀或简单取消所有校验冒充修复。原厂二进制仍走官方工具与配套字典。错误编码或损坏字节明确提示，原始数据保留；加密/缺分卷不索要或猜测密码。参阅 ARCHIVE_ENCODING_FIX_20261017.md 的已测/未测边界。

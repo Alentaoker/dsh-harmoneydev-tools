@@ -1,6 +1,6 @@
 # dshE2E 安装指南
 
-当前发行：dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.4。精确 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.4`；[可移植性验证范围](../../docs/PORTABILITY.md)。
+当前发行：dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.5。精确 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.5`；[可移植性验证范围](../../docs/PORTABILITY.md)。
 
 本仓库当前版本的两个插件配套安装。要求 Windows、DSH 0.2.0-rc.2、Node 24 和 npm；目标 DSH 数据目录及 desktop/web profile 已初始化。手机功能另需 HDC、驱动和调试授权，离线日志阅读不需要手机。
 

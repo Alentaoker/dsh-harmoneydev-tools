@@ -11,3 +11,5 @@
 - **HarmonyOS SDK symbol 索引**：`skill/hdesign-to-arkts/resources/` 中的 JSON 派生自 SDK 正式资源成员与 SDK 字体 cmap；版本和输入哈希见 `symbol-source.json`。不包含 SDK 字体二进制或社区图库。SDK 原有权利不因本仓库源码许可改变，本候选版按仓库所有者明确确认公开发布，原 SDK 权利及适用条件仍保留。
 
 - **yauzl 3.4.0**：https://github.com/thejoshwolfe/yauzl ，MIT。用于按条目流式读取 ZIP，版本和传递依赖锁定在 dshE2E 的 package-lock.json；未打包第三方解压程序。
+
+- **7z-bin 26.4.0 / 7-Zip 26.04**：https://github.com/MengLuoRJ/7z-bin ，封装为 MIT；二进制来自 https://github.com/ip7z/7zip/releases/tag/26.04 ，遵守随依赖保留的 LGPL/BSD/unRAR 限制及 License.txt。仅用于解开 RAR，不生成 RAR，不修改二进制；固定版本及完整性由 package-lock.json 记录，源码包不包含 node_modules。
