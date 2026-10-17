@@ -12,7 +12,7 @@
 
 手动截图与录屏跨会话保留，AI/测试产物不混入手动列表；点击截图可预览、缩放、批注，并把当前标注图加入当前对话。预览内支持 V/R/A/T/B、撤销重做、缩放与 Ctrl+Enter。旧来源不明媒体可单独查看，不擅自归为手动。任务、文件、数据库、命令、测试、语音等收进更多工具，原接口和数据保留。
 
-[实施计划与验收](docs/WORKBENCH_PLAN.md) · [日志指南](docs/LOG_WORKBENCH.md) · [截图快捷键](docs/MEDIA_WORKBENCH.md) · [AI 安装](docs/AI_INSTALLATION.md) · [AI 升级和回退](docs/AI_UPGRADE.md) · [验证记录](docs/VALIDATION.md)
+[下载本候选版](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.5-e2e-0.4.0-rc.4) · [实施计划与验收](docs/WORKBENCH_PLAN.md) · [日志指南](docs/LOG_WORKBENCH.md) · [截图快捷键](docs/MEDIA_WORKBENCH.md) · [AI 安装](docs/AI_INSTALLATION.md) · [AI 升级和回退](docs/AI_UPGRADE.md) · [验证记录](docs/VALIDATION.md)
 
 ## 配套版本与进度
 
@@ -47,4 +47,4 @@ docs/                     # 两插件共用的安装步骤、联动说明和维�
 
 原仓库名为 `dsh-harmony-e2e`；新名称为 `dsh-harmoneydev-tools`。插件源码由 `plugins/` 调整为 `plugin/`，包名 `dsh-harmony`、`dsh-e2e` 和数据目录不变。已安装的本地路径依赖需要按 [迁移说明](docs/REPOSITORY_MIGRATION.md) 重新登记，不能只搬文件夹。
 
-这是社区适配项目，非 DeepSeek、华为或上游项目的官方产品。完整发行包要求私有自用；发布前必须实时核验仓库可见性。原厂视频组件及 SDK 派生索引不因仓库源码许可而取得额外再分发许可。来源与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+这是社区适配项目，非 DeepSeek、华为或上游项目的官方产品。仓库所有者已确认本候选版公开发布；发布前核验目标与文件范围。原厂视频组件及 SDK 派生索引不因仓库源码许可而取得额外再分发许可。来源与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

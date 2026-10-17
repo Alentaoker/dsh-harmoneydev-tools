@@ -32,6 +32,6 @@ Windows 原生跨窗口拖放、另一台实体电脑与其它系统手机待验
 
 ## 发布与回退
 
-本地完整包和 SHA256 已准备。远端仓库当前公开，完整包包含限私用原厂资源，未向公开仓库上传。目标选择确定后再发布。
+仓库所有者已于 2026-10-17 明确确认公开上传完整候选包。[发行入口](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.5-e2e-0.4.0-rc.4) 提供 ZIP 和同名 SHA256；第三方来源与权利声明仍保留。
 
 旧来源 `E:\DeepSeekHarness\Sources\dsh-log-publish-20261016` 保留。desktop 本轮 profile 备份位于 `E:\DeepSeekHarness\Data\backups\dsh-harmony-e2e-20261017-014947-031`。回退先完整退出宿主，使用正式 CLI 依次登记旧 Harmony/E2E 目录并核对 bundle，再同环境启动；不删除整个 DataHome、不覆盖其它插件与模型配置。完整命令与版本限制见 AI_UPGRADE.md。
