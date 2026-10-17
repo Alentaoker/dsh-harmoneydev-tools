@@ -30,3 +30,13 @@
 原生 Windows 文件对话框已显示 .rar 允许类型，但自动化无法稳定定位其子窗口，原生选择文件完成链路未计通过；网页版同一后端的完整导入已验证。桌面冷启动检查与网页版导入证据分别记录。
 
 代码与自动回归包括 59 项 E2E 检查及 3 项发行/登记脚本检查；Harmony 未作运行源码变更。用户原始两份报错文件尚待路径补充。
+
+桌面冷启动发生在最后的编码标题与完整性警告显示补充之前；补充后已重建并在网页版冷启动验证，未再次完成原生桌面全流程冷启动验收。
+
+## 公开发布与持续集成
+
+- [配套预发布安装包](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.5-e2e-0.4.0-rc.5)，发行提交 `322630dc95494d15e7be3ecfa76fda1b60ba95e6`。
+- 安装包：`dsh-harmony-0.5.0-rc.5-e2e-0.4.0-rc.5-windows-source.zip`，3185843 字节。
+- SHA256：`f67718fe16bdd579143211cb64f029cf2479a2562032fca483d0803c0989196c`。已从远端重新下载比对，并校验包内 1070 个 manifest 文件。真实手机日志和截图未包含在公开包内。
+- [main 提交 CI](https://github.com/Alentaoker/dsh-harmoneydev-tools/actions/runs/39008623001) 与 [发行标签 CI](https://github.com/Alentaoker/dsh-harmoneydev-tools/actions/runs/39008645036) 均成功，覆盖 Harmony / E2E 构建测试及发行脚本检查。CI 的模拟单元测试与上述真实设备日志验证分开记录。
+- 此发布记录在发行提交之后单独补充；既有标签与安装包保持不变。
