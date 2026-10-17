@@ -47,3 +47,12 @@
 - 日常 DataHome 的 desktop 和 web 均已正式登记到新的长期来源目录，版本分别 rc.5 / rc.4；旧来源目录保留。desktop profile 备份已生成。
 - web 已冷启动并做实际界面/设备检查。desktop 当前仍有升级前的进程，本轮未强制结束它；需要正常退出桌面（含托盘）并从相同 DataHome 启动后，才算桌面实际加载完成。登记完成不等于运行中进程已更新。
 - 发布前 GitHub API 确认远端仓库 private=false。仓库所有者随后明确回复“可公开，直接上传”，确认完整候选包公开发布，第三方来源与权利声明保留。发布后核对标签、远端资产哈希与 CI，分别报告实际结果。
+
+## 公开发布核验
+
+- 候选版：v0.5.0-rc.5-e2e-0.4.0-rc.4，公开 prerelease，源码提交 f8bccf54ff8a8c925ef93ad7b7f3e8af1b97485e。
+- 已上传 windows-source.zip（3173829 字节）和同名 .sha256，GitHub 资产 digest、重新下载的文件哈希与本地一致。
+- ZIP SHA256：370caf961dbbdff72055e0f389f414d627f132c826c83c363bb5364e1e2eb2b2。包内 1065 个 manifest 文件逐项校验通过，未包含本机日志、截图、配置备份或凭据。
+- 所有者已明确确认公开上传；仓库可见性不变，第三方权利声明保留。桌面冷启动等待验范围仍按上文单独列出。
+
+- GitHub Windows CI 对发行源码提交通过：[main 推送检查](https://github.com/Alentaoker/dsh-harmoneydev-tools/actions/runs/38987800295)，包括两插件依赖安装、构建、自动回归及登记脚本。手机实测与上述本机记录分别计证。
