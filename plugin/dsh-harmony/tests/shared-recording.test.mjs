@@ -5,6 +5,7 @@ import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {Input,BufferSource,MP4} from 'mediabunny';
 const output=new URL('./.shared-recording-test.mjs',import.meta.url);
 await build({stdin:{contents:"export {openSharedVideo} from './vendor/lib/harmony/shared-video';export {startOwnedRecording} from './vendor/lib/harmony/media/owned-recording';export {HosVideoPacketizer} from './vendor/lib/harmony/media/hos-packets';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',platform:'node',packages:'external',outfile:fileURLToPath(output)});
 const {openSharedVideo,startOwnedRecording,HosVideoPacketizer}=await import(output.href);
@@ -35,4 +36,18 @@ test('recording shares the preview source, waits past startup JPEG and accepts c
  const movie=await readFile(destination);assert.equal(bytes,movie.length);assert.ok(movie.includes(Buffer.from('ftyp')));assert.ok(movie.includes(Buffer.from('moov')));
  assert.equal(preview.isLive(),true);assert.equal(starts,1);assert.equal(closes,0);
  await preview.close();await drain;assert.equal(closes,1);
+});
+
+test('a static change-driven recording retains the wall-clock tail through stop',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'dsh-static-recording-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const annex=(...units)=>Buffer.concat(units.flatMap(unit=>[Buffer.from([0,0,0,1]),unit]));
+ const key=annex(Buffer.from('6742c01fda014016ec0440000003004000000c83c60c658','hex'),Buffer.from('68ce3c80','hex'),Buffer.from([0x65,1,2]));
+ const packets=new HosVideoPacketizer(24,true).push(key);
+ let controller;
+ const connection={changeDriven:true,stream:new ReadableStream({start(c){controller=c;for(const packet of packets)c.enqueue(packet);}}),close:async()=>{try{controller.close();}catch{}}};
+ const recording=await startOwnedRecording(connection);t.after(()=>recording.discard());
+ await new Promise(resolve=>setTimeout(resolve,160));
+ const destination=join(directory,'static.mp4');await recording.stop(destination);
+ const input=new Input({source:new BufferSource(await readFile(destination)),formats:[MP4]});
+ try{const duration=await input.computeDuration();assert.ok(duration>=.14,`static tail was truncated: ${duration}s`);assert.ok(duration<2,`recording gained a fictitious tail: ${duration}s`);}finally{input.dispose();}
 });

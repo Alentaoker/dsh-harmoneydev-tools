@@ -1,9 +1,9 @@
 {
   "name": "dsh-e2e",
-  "version": "0.4.0-rc.5",
+  "version": "0.5.0-rc.1",
   "private": true,
   "type": "module",
-  "description": "dshE2E — 基于 e2e 的鸿蒙任务执行、结果验证、流程复用和本地测试报告",
+  "description": "dshVerify（鸿蒙开发验证）— 开发任务、安装交接、验证轮次、追加事件与证据服务；设备执行与观察由 dshHarmony 完成。安装标识仍为 dsh-e2e",
   "license": "Apache-2.0",
   "main": "lib/index.mjs",
   "exports": {
@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "7z-bin": "26.4.0",
-    "e2e": "0.19.0",
     "js-yaml": "4.1.1",
     "sharp": "0.35.5",
     "yauzl": "3.4.0"

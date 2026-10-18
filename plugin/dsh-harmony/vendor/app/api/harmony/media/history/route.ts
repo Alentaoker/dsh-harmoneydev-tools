@@ -10,6 +10,6 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const serial = params.get("serial") ?? "";
     const scope = params.get("scope") === "legacy" ? "legacy" : "manual";
-    return noStoreJson(await listHarmonyMediaHistory(getHarmonyDeviceManager().getConfig(), serial, scope));
+    return noStoreJson(await listHarmonyMediaHistory(getHarmonyDeviceManager().getConfig(), serial, scope, Number(params.get("limit") || 40)));
   } catch (error) { return harmonyErrorResponse(error); }
 }

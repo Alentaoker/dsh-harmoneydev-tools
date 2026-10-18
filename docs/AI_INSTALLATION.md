@@ -8,7 +8,7 @@
 
 ## 支持边界
 
-当前源码候选版本是 **dshHarmony 0.5.0-rc.5 + dshE2E 0.4.0-rc.5**，精确 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.5`，保持宿主 **0.2.0-rc.2**。本次改变日志列表、实时缓冲和手动媒体交互。各层验收与未测范围见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
+当前配套预发布版本是 **dshHarmony 0.5.0-rc.8 + dshVerify 0.5.0-rc.1**（安装标识 dsh-e2e；本次 tag 为 `v0.5.0-rc.8-e2e-0.5.0-rc.1`；上一版 tag 为 `v0.5.0-rc.5-e2e-0.4.0-rc.5`），保持宿主 **0.2.0-rc.2**。本次改变视频连接阶段、锁屏等待、预览开销、统一日志工作台、搜索历史与批注提交。本次配对构建、实际设备及界面验收见 [运行验收](RELEASE_ACCEPTANCE_20261018.md)，历史验证见 [验证记录](VALIDATION.md) 和 [可移植性记录](PORTABILITY.md)。安装时记录并明确报告所选候选/稳定身份，不静默替换。会话日志协议为 2，两个插件按此配套安装。
 
 | 项目 | 要求 |
 |---|---|
@@ -45,7 +45,7 @@
 例如在下载目录校验候选包：
 
 ```powershell
-$installArchive = '.\dsh-harmony-0.5.0-rc.5-e2e-0.4.0-rc.5-windows-source.zip'
+$installArchive = '.\dsh-harmony-0.5.0-rc.7-e2e-0.4.0-rc.6-windows-source.zip'
 $installExpectedHash = ((Get-Content -LiteralPath ($installArchive + '.sha256') -Raw).Trim() -split '\s+')[0]
 if ($installExpectedHash -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -LiteralPath $installArchive -Algorithm SHA256).Hash -ne $installExpectedHash) {
@@ -158,7 +158,7 @@ DevEco 等外部投屏需在其软件关闭设备投屏后释放；DSH 会约 10
 
 ## 本次调用路径验收
 
-参考 [dshE2E 使用说明](../plugin/dsh-e2e/USAGE.md#操作入口与验收范围)。必须观察到 e2e_phone.run、独立断言、报告写入、日志状态和控制释放；仅看到 status/resolve_app 或面板不能说明测试已经执行。只验当前页明确使用 runMode:verify_current，不能把此前未记录操作算作本次完整流程。验图片实际内容用 verificationMode:visual，并核对当前会话模型的 image 能力与实际验收输入截图；不要把外层 ModLens 读取截图算成 E2E 的视觉断言。直控需要 execution:direct 和 directReason。同会话交接须准确匹配空闲 agent 身份，其他会话仍拒绝。
+参考 [dshVerify 使用说明](../plugin/dsh-e2e/USAGE.md#操作速查)。安装验收应观察到：`save_task` 生成任务与检查点、`begin_validation` 返回 attemptId 与 contextRevision、Harmony 调用写入本轮事件、`record_checkpoint`（通过项带证据）、`finish_validation` 分开报告语义/日志完整性/清理；仅看到 `status`/`resolve_app` 或面板不能说明验证已执行。人工模式只读观察不得获取控制租约。只验当前已安装功能时用 `verifyExisting:true`；用户确认安装后用 `installationConfirmed:true`。旧 `run/replay/retry` 已退役，看到它们被调用应视为未验收。
 
 ## 10. 日志导入与大文件安装验收
 
@@ -204,3 +204,7 @@ HDC 是手机连接依赖，插件内嵌的视频组件不能替代它。使用�
 本版本要求 lockfile 的 7z-bin 26.4.0，完整 7z.exe/7z.dll（Windows x64）用于 RAR；7za 无 RAR 支持，不能代替。依赖仍由 npm ci 安装，不要求用户预装 WinRAR。安装依赖后检查当前平台二进制存在、可列出 RAR，再做实际导入；源码包不捆绑 node_modules。上游许可及来源见 THIRD_PARTY_NOTICES.md。
 
 验收 .rar 文件选择/拖入、RAR4/5、UTF-8/UTF-16/GB18030 的 GZ、编码下拉框与重新解析。旧版“严格 UTF-8”失败不能用重命名后缀或简单取消所有校验冒充修复。原厂二进制仍走官方工具与配套字典。错误编码或损坏字节明确提示，原始数据保留；加密/缺分卷不索要或猜测密码。参阅 ARCHIVE_ENCODING_FIX_20261017.md 的已测/未测边界。
+
+## 本轮交互回归验收
+
+参见 [工作台交互优化](WORKBENCH_UX_20261018.md)。确认历史菜单贴近各自输入框且不占日志区；媒体仅在用户确认后清理，单删/全选/多选均需验证；T 点击画布输入、Enter 确认、重选再编辑、撤销/重做、Ctrl+Enter 生成当前文字；跨文件搜索覆盖当前会话全部正文，结果分页不遗漏、来源行可定位、取消与会话切换不串结果。使用临时目录做破坏性删除测试，不用用户媒体作自动删除样本。依赖预检本轮 pairedSources 应为 10。

@@ -1,6 +1,7 @@
 const bundlePattern = /^[A-Za-z][A-Za-z0-9_.]{1,254}$/;
 import { severity, logStatusLabels, compileLogQuery, validatePage, publicLog } from './log-query.mjs';
 import { createLogArchive } from './log-archive.mjs';
+import { createCaptureSession } from './capture-session.mjs';
 export { logStatusLabels };
 
 export function redactLog(text, secrets = []) {
@@ -41,83 +42,35 @@ export async function resolveLogTarget(manager, serial, args, signal) {
   throw new Error('缺少日志目标：请调用 resolve_app 按应用名称查询，再传 appName 或 logAppBundle；仅查看通用界面可显式 collectLogs:false');
 }
 
+/**
+ * Backwards-compatible adapter around CaptureSession for callers that still
+ * hold a job-shaped object (tests and the legacy log page). The session owns the
+ * AbortController and lifecycle; nothing here depends on a runner or a lease.
+ */
 export async function startLogCollection(manager, job) {
-  const signal = job.controller.signal, controller = new AbortController();
-  const info = job.logCollection = { status: 'starting', mode: 'live', startedAt: new Date().toISOString(), target: job.logTarget, pids: [], observedPids: [], retained: 0, dropped: 0, excludedHistory: 0, boundary: 'receive-time-only', streamConfirmed: false, warnings: [] };
-  job.logArchive = await createLogArchive(job, warning);
-  let cutoff, streamPromise, refreshPromise, finishing = false, stopTimer, resolveReady;
-  const ready = new Promise(resolve => { resolveReady = resolve; });
-  const current = new Map(), observed = new Set();
-  const safe = text => redactLog(text, [job.device.serial, job.lease?.token]);
-  function warning(message) { const value = safe(message); if (!info.warnings.includes(value)) info.warnings.push(value); }
-  async function refresh() {
-    if (refreshPromise || finishing || signal.aborted) return refreshPromise;
-    const refreshSignal = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(15000)]);
-    refreshPromise = (async () => {
-      try {
-        const processes = await manager.listProcesses(job.device.serial, refreshSignal);
-        if (finishing) return;
-        current.clear(); for (const process of processes) current.set(process.pid, process.name);
-        info.pids = processes.filter(p => processMatches(p.name, job.logTarget)).map(p => p.pid);
-        for (const pid of info.pids) observed.add(pid);
-        info.observedPids = [...observed];
-      } catch (error) {
-        if (!signal.aborted && !controller.signal.aborted) {
-          if (refreshSignal.aborted && refreshSignal.reason?.name === 'TimeoutError') info.refreshDeferred = (info.refreshDeferred || 0) + 1;
-          else warning(`目标进程刷新失败：${error.message}`);
-        }
-      }
-      finally { refreshPromise = undefined; }
-    })();
-    return refreshPromise;
-  }
-  await refresh();
-  try {
-    const baseline = await manager.readLogs({ serial: job.device.serial, limit: 200, signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) });
-    const times = baseline.map(e => logTime(e.timestamp)).filter(Number.isFinite);
-    if (times.length) { cutoff = Math.max(...times); info.boundary = 'device-log-watermark'; info.watermark = baseline.find(e => logTime(e.timestamp) === cutoff)?.timestamp; }
-    else warning('未获得设备日志时间边界，日志按收到时间记录，可能包含启动时缓冲的历史条目');
-  } catch (error) { if (signal.aborted) throw error; warning(`未获得设备日志时间边界：${error.message}；可能包含缓冲历史日志`); }
-  signal.throwIfAborted();
-  const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
-  function accept(entries) {
-    if (finishing) return;
-    info.streamConfirmed = true; info.status = 'capturing'; resolveReady();
-    for (const entry of entries) {
-      const knownName = current.get(entry.pid);
-      const pidMatch = knownName ? processMatches(knownName, job.logTarget) : observed.has(entry.pid);
-      const bundleMatch = new RegExp(`(?:^|[^A-Za-z0-9_.])${job.logTarget.bundleName.replaceAll('.', '\\.')}($|[^A-Za-z0-9_.])`).test(`${entry.tag || ''} ${entry.message || ''}`);
-      if (!pidMatch && !bundleMatch) continue;
-      const time = logTime(entry.timestamp);
-      if (cutoff !== undefined && (time === undefined || time <= cutoff)) { info.excludedHistory++; continue; }
-      const captured = { ...entry, message: safe(entry.message), raw: safe(entry.raw), tag: safe(entry.tag), capturedAt: new Date().toISOString() };
-      const size = Buffer.byteLength(JSON.stringify(captured));
-      job.logs.push(captured); job.pendingLogs.push(captured); job.logArchive?.enqueue(captured);
-      job.logBytes = (job.logBytes || 0) + size; job.pendingLogBytes = (job.pendingLogBytes || 0) + size;
-      while (job.logs.length && job.logBytes > 2 * 1024 * 1024) { job.logBytes -= Buffer.byteLength(JSON.stringify(job.logs.shift())); info.dropped++; }
-      while (job.pendingLogs.length && job.pendingLogBytes > 2 * 1024 * 1024) job.pendingLogBytes -= Buffer.byteLength(JSON.stringify(job.pendingLogs.shift()));
-      if (job.logs.length > 1000) { job.logBytes -= Buffer.byteLength(JSON.stringify(job.logs.shift())); info.dropped++; }
-      if (job.pendingLogs.length > 1000) job.pendingLogBytes -= Buffer.byteLength(JSON.stringify(job.pendingLogs.shift()));
-    }
-    info.retained = job.logs.length; info.memoryBytes = job.logBytes || 0;
-  }
-  try {
-    streamPromise = Promise.resolve(manager.streamLogs(job.device.serial, accept, controller.signal)).then(() => {
-      if (!controller.signal.aborted) { info.status = 'failed'; warning('设备日志流意外结束'); }
-    }).catch(error => { if (!controller.signal.aborted) { info.status = 'failed'; warning(`设备日志采集失败：${error.message}`); } }).finally(resolveReady);
-  } catch (error) { info.status = 'failed'; warning(`设备日志采集失败：${error.message}`); resolveReady(); }
-  const timer = setInterval(() => void refresh(), 2000); timer.unref?.();
-  await Promise.race([ready, new Promise(resolve => { stopTimer = setTimeout(resolve, 1000); })]); clearTimeout(stopTimer);
-  return { refresh, async stop() {
-    finishing = true; clearInterval(timer); signal.removeEventListener('abort', abort); controller.abort();
-    let cleanupTimer; await Promise.race([Promise.allSettled([streamPromise, refreshPromise]), new Promise(resolve => { cleanupTimer = setTimeout(() => { warning('日志连接关闭超时'); resolve(); }, 1500); })]); clearTimeout(cleanupTimer);
-    info.completedAt = new Date().toISOString(); info.retained = job.logs.length; info.memoryBytes = job.logBytes || 0;
-    if (!info.observedPids.length) warning('未观察到目标应用进程；仅保存明确包含目标包名的条目');
-    if (info.status === 'failed' || info.diskDropped || info.queueDropped) info.status = job.logs.length ? 'partial' : 'failed';
-    else info.status = job.logs.length ? 'captured' : info.streamConfirmed ? 'empty' : 'unconfirmed';
-    if (info.dropped) warning(job.logArchive ? `内存仅保留最近 1000 条 / 2 MiB；${info.dropped} 条较早日志请分页读取磁盘正文` : `超过保存上限，已省略 ${info.dropped} 条较早日志，保留最近 1000 条`);
-    await job.logArchive?.close();
-  } };
+  const session = createCaptureSession({
+    manager,
+    serial: job.device.serial,
+    target: job.logTarget,
+    sink: job,
+    signal: job.controller?.signal,
+    owner: { kind: 'legacy-job', id: job.id, sessionId: job.sessionId },
+  });
+  job.capture = session;
+  job.logArchive = await createLogArchive(job, message => {
+    const warnings = job.logCollection.warnings;
+    if (!warnings.includes(message)) warnings.push(message);
+  });
+  const { refresh } = await session.start();
+  return {
+    refresh,
+    captureId: session.captureId,
+    async stop() {
+      const info = await session.stop();
+      job.logCollection = info;
+    },
+    async cancel(reason) { return session.cancel(reason); },
+  };
 }
 
 export function logPage(job, options = {}) {

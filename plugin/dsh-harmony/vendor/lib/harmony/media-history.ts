@@ -1,5 +1,5 @@
-import { lstat, opendir, open, readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { lstat, opendir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { resolveHarmonyStorage, safeHarmonyDeviceName } from "./artifacts";
 import { HarmonyError } from "./errors";
 import type { HarmonyConfig, HarmonyMediaArtifact } from "./types";
@@ -30,7 +30,8 @@ async function screenshotSize(path: string): Promise<{ width: number; height: nu
 }
 
 /** Rediscover saved results from the configured private media folders after a desktop restart. */
-export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: string, scope: "all" | "manual" | "legacy" = "all"): Promise<{ artifacts: HarmonyMediaArtifact[]; truncated: boolean }> {
+export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: string, scope: "all" | "manual" | "legacy" = "all", limit = MAX_HISTORY): Promise<{ artifacts: HarmonyMediaArtifact[]; truncated: boolean }> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new HarmonyError("INVALID_ARGUMENT", "History limit must be 1–1000");
   if (!/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(serial)) throw new HarmonyError("INVALID_ARGUMENT", "Choose a valid device");
   const prefix = safeHarmonyDeviceName(serial);
   const storage = resolveHarmonyStorage(config);
@@ -58,7 +59,6 @@ export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: str
     } finally { await directory.close().catch(() => undefined); }
   }
   candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  if (candidates.length > MAX_HISTORY) truncated = true;
   const artifacts: HarmonyMediaArtifact[] = [];
   for (const candidate of candidates) {
     const path = join(candidate.directory, candidate.filename);
@@ -74,7 +74,44 @@ export async function listHarmonyMediaHistory(config: HarmonyConfig, serial: str
     if (scope === 'manual' && source !== 'manual' || scope === 'legacy' && source !== 'unknown') continue;
     artifacts.push({ source, kind: candidate.kind, serial, path, filename: candidate.filename,
       createdAt: candidate.createdAt, size: info.size, ...(dimensions ?? {}), mimeType: candidate.kind === "screenshot" ? "image/png" : "video/mp4" });
-    if (artifacts.length >= MAX_HISTORY) break;
+    if (artifacts.length > limit) { artifacts.pop(); truncated = true; break; }
   }
   return { artifacts, truncated };
+}
+
+/** Delete only explicitly selected, generated files from this device's configured media roots. */
+export async function deleteHarmonyMedia(config: HarmonyConfig, serial: string, items: Array<{ kind: string; filename: string }>, scope: "manual" | "legacy" = "manual") {
+  if (typeof serial !== "string" || !/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(serial) || !Array.isArray(items) || !items.length || items.length > 1000
+    || !["manual", "legacy"].includes(scope)) throw new HarmonyError("INVALID_ARGUMENT", "Choose 1–1000 saved media files");
+  const storage = resolveHarmonyStorage(config), prefix = safeHarmonyDeviceName(serial);
+  const targets: Array<{ filename: string; path: string; size: number; markerBytes: number; marker: boolean }> = [], seen = new Set<string>();
+  // Validate the entire selection before deleting the first file. Client paths are never accepted.
+  for (const item of items) {
+    if (!item || !["screenshot", "recording"].includes(item.kind) || typeof item.filename !== "string"
+      || !generatedTime(item.filename, prefix, item.kind === "screenshot" ? "png" : "mp4")) throw new HarmonyError("INVALID_ARGUMENT", "Media does not belong to this device");
+    if (seen.has(item.filename)) continue; seen.add(item.filename);
+    const directory = item.kind === "screenshot" ? storage.screenshotDirectory : storage.recordingDirectory;
+    if (!isAbsolute(directory)) throw new HarmonyError("INVALID_ARGUMENT", "Media directory must be absolute");
+    const folder = await lstat(directory);
+    if (!folder.isDirectory() || folder.isSymbolicLink()) throw new HarmonyError("INVALID_ARGUMENT", "Invalid media directory");
+    const root = await realpath(directory), path = resolve(root, item.filename);
+    if (dirname(path) !== root) throw new HarmonyError("INVALID_ARGUMENT", "Media path escapes its directory");
+    const info = await lstat(path).catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
+    if (!info) continue;
+    if (!info.isFile() || info.isSymbolicLink()) throw new HarmonyError("INVALID_ARGUMENT", "Media is not a regular file");
+    const marker = await lstat(path + '.origin.json').catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
+    if (marker && (!marker.isFile() || marker.isSymbolicLink() || marker.size >= 4096)) throw new HarmonyError("INVALID_ARGUMENT", "Invalid media origin");
+    let source = "unknown";
+    if (marker) { try { const origin = JSON.parse(await readFile(path + '.origin.json', 'utf8')); if (origin.filename === item.filename) source = origin.source; } catch {} }
+    if (source !== (scope === "manual" ? "manual" : "unknown")) throw new HarmonyError("INVALID_ARGUMENT", "Only the selected manual or legacy library can be cleared");
+    targets.push({ filename: item.filename, path, size: info.size, markerBytes: marker?.size || 0, marker: !!marker });
+  }
+  const deleted: string[] = [], errors: Array<{ filename: string; error: string }> = []; let freedBytes = 0;
+  for (const target of targets) {
+    try {
+      await unlink(target.path); deleted.push(target.filename); freedBytes += target.size;
+      if (target.marker) try { await unlink(target.path + '.origin.json'); freedBytes += target.markerBytes; } catch (error) { if (error.code !== "ENOENT") errors.push({ filename: target.filename, error: "媒体已删除，来源记录清理失败" }); }
+    } catch (error) { errors.push({ filename: target.filename, error: error instanceof Error ? error.message : String(error) }); }
+  }
+  return { deleted, freedBytes, errors };
 }

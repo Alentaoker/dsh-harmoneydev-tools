@@ -1,6 +1,6 @@
 {
   "name": "dsh-harmony",
-  "version": "0.5.0-rc.5",
+  "version": "0.5.0-rc.8",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

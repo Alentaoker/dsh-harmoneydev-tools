@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { compilePattern, regexHelp } from './log-query.mjs';
 import { LogApplicationFilter } from './LogApplicationFilter.jsx';
+import { useLogSearchHistory, LogSearchHistoryMenu } from './LogSearchHistory.jsx';
+import { historyKeyAction, isComposingKey, nextCursor } from './log-search-menu.mjs';
 const viewerCache = new Map();
 const columnNames = { timestamp: '时间', pid: 'PID:TID', level: '级别', domain: 'DOMAIN', process: '包名 / 进程', tag: 'TAG', message: '消息' };
 
@@ -12,11 +14,17 @@ function Highlight({ text, pattern }) {
   parts.push(text.slice(start)); return parts;
 }
 
-export function LogViewer({ url, exportUrl, visible = true, live = false, initialWindow, refreshKey = 0, timeBasis = '本机采集时间', onAnalyze, sessionId }) {
+export function LogViewer({ url, exportUrl, visible = true, live = false, initialWindow, refreshKey = 0, timeBasis = '本机采集时间', onAnalyze, sessionId, focusSourceLine }) {
   const saved = viewerCache.get(url);
   const [filters, setFilters] = useState(saved?.filters || { bundle: '', query: '', tag: '', domain: '', pid: '', tid: '', level: '', regex: false, caseSensitive: false, from: initialWindow?.from || '', until: initialWindow?.until || '' });
   const [debounced, setDebounced] = useState(filters), [offset, setOffset] = useState(saved?.offset || 0), [history, setHistory] = useState([]), [page, setPage] = useState(), [error, setError] = useState('');
   const [findOpen, setFindOpen] = useState(false), [find, setFind] = useState(''), [findCase, setFindCase] = useState(false), [findRegex, setFindRegex] = useState(false), [cursor, setCursor] = useState(0);
+  // Search history: same store as dshHarmony's live pane, so both log views offer
+  // one shared list. `selected` starts false, so focusing a box never turns Enter
+  // into "reuse an old entry".
+  const queryHistory = useLogSearchHistory('filter'), findHistory = useLogSearchHistory('find');
+  const [queryHistoryOpen, setQueryHistoryOpen] = useState(false), [queryCursor, setQueryCursor] = useState(0), [querySelected, setQuerySelected] = useState(false);
+  const [findHistoryOpen, setFindHistoryOpen] = useState(false), [findCursor, setFindCursor] = useState(0), [findSelected, setFindSelected] = useState(false);
   const [fullRow, setFullRow] = useState(), [exporting, setExporting] = useState(false), [exportError, setExportError] = useState('');
   const [pageSize, setPageSize] = useState(saved?.pageSize || 500), [scrollTop, setScrollTop] = useState(saved?.scrollTop || 0), [viewportHeight, setViewportHeight] = useState(420), [detailHeight, setDetailHeight] = useState(220);
   const [columns, setColumns] = useState(saved?.columns || { timestamp: true, pid: true, level: true, domain: false, process: false, tag: true, message: true });
@@ -74,10 +82,54 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
   }
   function move(delta) { const next = (cursor + delta + matches.length) % matches.length; setCursor(next); const top = matches[next] * rowHeight; if (viewport.current) viewport.current.scrollTop = top; setScrollTop(top); }
   const change = (key, value) => setFilters(f => ({ ...f, [key]: value }));
+  // Applying a history entry restores its pattern and flags but touches no other
+  // filter (bundle, tag, level, time range stay as they are).
+  const applyQueryHistory = entry => {
+    setFilters(f => ({ ...f, query: entry.query, regex: Boolean(entry.regex), caseSensitive: Boolean(entry.caseSensitive) }));
+    queryHistory.record(entry.query, entry.regex, entry.caseSensitive);
+  };
+  const applyFindHistory = entry => {
+    setFind(entry.query); setFindRegex(Boolean(entry.regex)); setFindCase(Boolean(entry.caseSensitive));
+    findHistory.record(entry.query, entry.regex, entry.caseSensitive);
+  };
+  const openQueryHistory = () => { setFindHistoryOpen(false); setQueryHistoryOpen(true); setQuerySelected(false); queryHistory.reload(); };
+  const openFindHistory = () => { setQueryHistoryOpen(false); setFindHistoryOpen(true); setFindSelected(false); findHistory.reload(); };
+  const queryHistoryKey = event => {
+    if (isComposingKey(event)) return;
+    const action = historyKeyAction(event, { open: queryHistoryOpen, cursor: queryCursor, count: queryHistory.entries.length, selected: querySelected });
+    if (action === 'close') { event.preventDefault(); event.stopPropagation(); setQueryHistoryOpen(false); setQuerySelected(false); return; }
+    if (action === 'up' || action === 'down') { event.preventDefault(); setQuerySelected(true); setQueryCursor(value => nextCursor(value, action === 'up' ? -1 : 1, queryHistory.entries.length)); return; }
+    if (action === 'apply') { event.preventDefault(); event.stopPropagation(); const entry = queryHistory.entries[queryCursor]; if (entry) applyQueryHistory(entry); setQueryHistoryOpen(false); setQuerySelected(false); return; }
+    if (event.key === 'Enter') { event.preventDefault(); queryHistory.record(filters.query, filters.regex, filters.caseSensitive); setQueryHistoryOpen(false); setQuerySelected(false); }
+  };
+  const findHistoryKey = event => {
+    if (isComposingKey(event)) return;
+    const action = historyKeyAction(event, { open: findHistoryOpen, cursor: findCursor, count: findHistory.entries.length, selected: findSelected });
+    if (action === 'close') { event.preventDefault(); event.stopPropagation(); setFindHistoryOpen(false); setFindSelected(false); return; }
+    if (action === 'up' || action === 'down') { event.preventDefault(); setFindSelected(true); setFindCursor(value => nextCursor(value, action === 'up' ? -1 : 1, findHistory.entries.length)); return; }
+    if (action === 'apply') { event.preventDefault(); event.stopPropagation(); const entry = findHistory.entries[findCursor]; if (entry) applyFindHistory(entry); setFindHistoryOpen(false); setFindSelected(false); return; }
+    if (event.key === 'Enter') { if (matches.length) { event.preventDefault(); move(event.shiftKey ? -1 : 1); } if (!findError && find.trim()) findHistory.record(find, findRegex, findCase); }
+  };
   return <section className="log-viewer" ref={root} tabIndex={0} aria-label="日志查看器，Ctrl+F 查找本页" style={{ '--log-row-height': rowHeight + 'px' }}>
     <div className="log-primary-tools">
       <LogApplicationFilter sessionId={sessionId || new URL(url, globalThis.location?.href || 'http://localhost').searchParams.get('sessionId')} applications={page?.applications || []} value={filters.bundle || ''} onChange={value => change('bundle', value)}/>
-      <input aria-label="日志关键词" placeholder="过滤关键词" value={filters.query} onChange={e => change('query', e.target.value)} maxLength={256}/>
+      <div className="log-search-anchor" data-history-anchor="filter" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setQueryHistoryOpen(false); }}>
+      <input aria-label="日志关键词" placeholder="过滤关键词" value={filters.query} maxLength={256}
+        onChange={e => { setQuerySelected(false); change('query', e.target.value); }}
+        onFocus={() => openQueryHistory()}
+        onBlur={event => { if (event.relatedTarget && event.currentTarget.closest('[data-history-anchor]')?.contains(event.relatedTarget)) return; window.setTimeout(() => {
+          setQueryHistoryOpen(false); setQuerySelected(false);
+          // The filter applies as you type, so a keyword the person actually
+          // looked at is history even without pressing Enter — same rule as the
+          // live pane in dshHarmony.
+          if (filters.query.trim()) queryHistory.record(filters.query, filters.regex, filters.caseSensitive);
+        }, 120); }}
+        onKeyDown={queryHistoryKey}/>
+      {queryHistory.available && <button aria-label="过滤历史" aria-expanded={queryHistoryOpen} title="最近使用的筛选关键词" onClick={() => { if (queryHistoryOpen) { setQueryHistoryOpen(false); setQuerySelected(false); } else openQueryHistory(); }}>历史</button>}
+    {queryHistoryOpen && queryHistory.available ? <LogSearchHistoryMenu entries={queryHistory.entries} cursor={queryCursor} onCursor={setQueryCursor}
+      onPick={entry => { applyQueryHistory(entry); setQueryHistoryOpen(false); setQuerySelected(false); }}
+      onRemove={queryHistory.remove} onClear={queryHistory.clear} onClose={() => { setQueryHistoryOpen(false); setQuerySelected(false); }} label="筛选搜索历史"/> : null}
+      </div>
       <select aria-label="最低日志级别" value={filters.level} onChange={e => change('level', e.target.value)}><option value="">全部级别</option>{['debug', 'info', 'warn', 'error', 'fatal'].map(l => <option key={l} value={l}>{l} 及以上</option>)}</select>
     </div>
     <div className="log-secondary-tools">
@@ -89,14 +141,28 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
       <button aria-label="清除过滤" title="清除全部过滤条件" onClick={() => setFilters({ bundle: '', query: '', tag: '', domain: '', pid: '', tid: '', level: '', regex: false, caseSensitive: false, from: '', until: '' })}>重置</button>
     </div>
     {exportError && <p role="alert" className="notice error">{exportError}</p>}
-    {findOpen && <div className="log-find" role="search"><div className="row"><input ref={findInput} aria-label="查找本页日志" placeholder="本页查找，不改变过滤结果" value={find} maxLength={256} onChange={e => setFind(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && matches.length) { e.preventDefault(); move(e.shiftKey ? -1 : 1); } if (e.key === 'Escape') { setFindOpen(false); setFind(''); } }}/><button disabled={!matches.length} aria-label="上一个匹配行" onClick={() => move(-1)}>↑</button><button disabled={!matches.length} aria-label="下一个匹配行" onClick={() => move(1)}>↓</button><button aria-label="关闭查找" onClick={() => { setFindOpen(false); setFind(''); }}>×</button></div><div className="row"><label className="check"><input type="checkbox" checked={findCase} onChange={e => setFindCase(e.target.checked)}/>Aa</label><label className="check"><input type="checkbox" checked={findRegex} onChange={e => setFindRegex(e.target.checked)}/>.*</label><span className="muted">{matches.length ? cursor + 1 : 0}/{matches.length} 个匹配行 · 仅当前页；搜索全部日志请用过滤</span></div>{findError && <p role="alert" className="error">{findError}</p>}</div>}
+    {findOpen && <div className="log-find" role="search"><div className="row"><div className="log-search-anchor" data-history-anchor="find" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFindHistoryOpen(false); }}><input ref={findInput} aria-label="查找本页日志" placeholder="本页查找，不改变过滤结果" value={find} maxLength={256}
+      onChange={e => { setFindSelected(false); setFind(e.target.value); }}
+      onFocus={() => openFindHistory()}
+      onBlur={event => { if (event.relatedTarget && event.currentTarget.closest('[data-history-anchor]')?.contains(event.relatedTarget)) return; window.setTimeout(() => { setFindHistoryOpen(false); setFindSelected(false); }, 120); }}
+      onKeyDown={e => {
+        if (isComposingKey(e)) return;
+        findHistoryKey(e);
+        // Escape is consumed here: closing the find bar (or its history) must not
+        // reach the surrounding panel, which would close the whole workbench.
+        if (e.key === 'Escape' && !findHistoryOpen) { e.preventDefault(); e.stopPropagation(); setFindOpen(false); setFind(''); }
+      }}/>{findHistory.available && <button aria-label="查找历史" aria-expanded={findHistoryOpen} title="最近使用的查找关键词" onClick={() => { if (findHistoryOpen) { setFindHistoryOpen(false); setFindSelected(false); } else openFindHistory(); }}>历史</button>}
+    {findOpen && findHistoryOpen && findHistory.available ? <LogSearchHistoryMenu entries={findHistory.entries} cursor={findCursor} onCursor={setFindCursor}
+      onPick={entry => { applyFindHistory(entry); setFindHistoryOpen(false); setFindSelected(false); findInput.current?.focus(); }}
+      onRemove={findHistory.remove} onClear={findHistory.clear} onClose={() => { setFindHistoryOpen(false); setFindSelected(false); }} label="查找搜索历史"/> : null}
+      </div><button disabled={!matches.length} aria-label="上一个匹配行" onClick={() => move(-1)}>↑</button><button disabled={!matches.length} aria-label="下一个匹配行" onClick={() => move(1)}>↓</button><button aria-label="关闭查找" onClick={() => { setFindOpen(false); setFind(''); }}>×</button></div><div className="row"><label className="check"><input type="checkbox" checked={findCase} onChange={e => setFindCase(e.target.checked)}/>Aa</label><label className="check"><input type="checkbox" checked={findRegex} onChange={e => setFindRegex(e.target.checked)}/>.*</label><span className="muted">{matches.length ? cursor + 1 : 0}/{matches.length} 个匹配行 · 仅当前页；搜索全部日志请用过滤</span></div>{findError && <p role="alert" className="error">{findError}</p>}</div>}
     {error ? <p role="alert" className="notice error">{error}</p> : !page ? <p role="status">正在读取日志…</p> : <>
       <div className="log-status-line"><span className="muted">共 {page.total} 条 · 符合过滤 {page.filteredTotal} 条 · 本页 {page.entries.length ? offset + 1 : 0}–{offset + page.entries.length}</span>{!!page.logCollection?.warnings?.length && <details className="offline-log-warnings"><summary>范围与完整性 · {page.logCollection.warnings.length} 项</summary><div>{page.logCollection.warnings.map((warning, i) => <p className="muted" key={i}>{warning}</p>)}</div></details>}</div>
       <div className="log-page-tools"><label><select aria-label="每页日志条数" value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setOffset(0); setHistory([]); setScrollTop(0); }}>{[100, 500, 1000].map(n => <option key={n} value={n}>{n} 条 / 页</option>)}</select></label><button disabled={!offset} onClick={() => { setOffset(0); setHistory([]); setScrollTop(0); }}>首页</button><button disabled={!history.length} onClick={() => { setOffset(history.at(-1)); setHistory(h => h.slice(0, -1)); setScrollTop(0); }}>上一页</button><button disabled={page.nextOffset === null} onClick={() => { setHistory(h => [...h.slice(-999), offset]); setOffset(page.nextOffset); setScrollTop(0); }}>下一页</button><details className="offline-columns"><summary>列 / 行距</summary><div>{Object.entries(columnNames).map(([key, label]) => <label className="check" key={key}><input type="checkbox" aria-label={'显示列 ' + label} checked={columns[key]} disabled={key === 'message'} onChange={e => setColumns(value => ({ ...value, [key]: e.target.checked }))}/>{label}</label>)}<label className="check"><input type="checkbox" aria-label="紧凑行距" checked={compact} onChange={e => { setCompact(e.target.checked); setScrollTop(0); if (viewport.current) viewport.current.scrollTop = 0; }}/>紧凑行距</label></div></details>{exportUrl && <button className="export-filtered" title="导出全部筛选结果，包含分页以外的匹配日志" disabled={exporting} onClick={exportFiltered}>{exporting ? '正在导出…' : '导出筛选结果'}</button>}</div>
       <div ref={viewport} className="log-table-scroll log-virtual" onScroll={e => setScrollTop(e.currentTarget.scrollTop)}><table className="log-table" style={{ minWidth: 300 + visibleColumns.reduce((n, key) => n + ({ timestamp: 148, pid: 92, level: 56, domain: 78, process: 170, tag: 120 }[key] || 0), 0) }}><colgroup>{visibleColumns.map(key => <col key={key} style={key === 'message' ? {} : { width: { timestamp: 148, pid: 92, level: 56, domain: 78, process: 170, tag: 120 }[key] }}/>)}</colgroup><thead><tr>{visibleColumns.map(key => <th key={key}>{columnNames[key]}</th>)}</tr></thead><tbody>
         {(() => { const first = Math.min(page.entries.length, Math.max(0, Math.floor(scrollTop / rowHeight) - 4)), end = Math.min(page.entries.length, first + Math.ceil(viewportHeight / rowHeight) + 10); return <>
           {first > 0 && <tr aria-hidden="true" className="log-spacer"><td colSpan={visibleColumns.length} style={{ height: first * rowHeight }}/></tr>}
-          {page.entries.slice(first, end).map((e, local) => { const index = first + local, values = { timestamp: e.timestamp || e.capturedAt, pid: `${e.pid ?? '—'}:${e.tid ?? '—'}`, level: e.level, domain: e.domain || '—', process: e.bundle || e.process || '归属未知', tag: e.tag || '—', message: e.message }; return <tr key={index} ref={node => node ? rows.current.set(index, node) : rows.current.delete(index)} tabIndex={0} onClick={() => readFull(index)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); readFull(index); } }} className={'log-' + e.level + (find && matches[cursor] === index ? ' find-current' : '') + (fullRow?.sourceLine && fullRow.sourceLine === e.sourceLine ? ' log-selected' : '')}>{visibleColumns.map(key => <td key={key} title={values[key]}>{key === 'message' ? <><span className="log-message-preview"><Highlight text={e.message} pattern={pattern}/></span><button className="log-detail-button" onClick={event => { event.stopPropagation(); readFull(index); }}>详情</button></> : <Highlight text={values[key]} pattern={pattern}/>}</td>)}</tr>; })}
+          {page.entries.slice(first, end).map((e, local) => { const index = first + local, values = { timestamp: e.timestamp || e.capturedAt, pid: `${e.pid ?? '—'}:${e.tid ?? '—'}`, level: e.level, domain: e.domain || '—', process: e.bundle || e.process || '归属未知', tag: e.tag || '—', message: e.message }; return <tr data-source-line={e.sourceLine} key={index} ref={node => node ? rows.current.set(index, node) : rows.current.delete(index)} tabIndex={0} onClick={() => readFull(index)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); readFull(index); } }} className={'log-' + e.level + (e.sourceLine === focusSourceLine ? ' source-focus' : '') + (find && matches[cursor] === index ? ' find-current' : '') + (fullRow?.sourceLine && fullRow.sourceLine === e.sourceLine ? ' log-selected' : '')}>{visibleColumns.map(key => <td key={key} title={values[key]}>{key === 'message' ? <><span className="log-message-preview"><Highlight text={e.message} pattern={pattern}/></span><button className="log-detail-button" onClick={event => { event.stopPropagation(); readFull(index); }}>详情</button></> : <Highlight text={values[key]} pattern={pattern}/>}</td>)}</tr>; })}
           {end < page.entries.length && <tr aria-hidden="true" className="log-spacer"><td colSpan={visibleColumns.length} style={{ height: (page.entries.length - end) * rowHeight }}/></tr>}
         </>; })()}
       </tbody></table>{!page.entries.length && <div className="empty">没有符合过滤的日志。请检查时间范围及采集状态。</div>}</div>

@@ -3,9 +3,13 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { HarmonyRequestError } from "@/lib/harmony/request-error";
 import { consumeHarmonyVideoPackets } from "@/lib/harmony/media/browser-video-packets";
+import { canStartVideoStream, screenStateSignature, type HarmonyScreenState } from "@/lib/harmony/observation/screen-state";
+import { liveViewPolicy, resolveLiveViewPhase, type HarmonyLiveViewPhase } from "@/lib/harmony/observation/live-view-phase";
+import { admitVideoUnit, keyframeWaitExpired, KEYFRAME_WAIT_LIMIT_MS, VideoBacklog } from "@/lib/harmony/media/video-backlog";
 
 export type HarmonyFrameStatus = "idle" | "loading" | "live" | "error";
 export type HarmonyFrameMode = "idle" | "video" | "frames";
+export type { HarmonyLiveViewPhase } from "@/lib/harmony/observation/live-view-phase";
 
 export interface HarmonyLiveFrame {
   initialPreview?:boolean;
@@ -17,6 +21,29 @@ export interface HarmonyLiveFrame {
   height: number;
 }
 
+/**
+ * Live diagnostics for the device page. Values are mutated in place so a
+ * per-frame counter never causes a React render; the panel reads them whenever
+ * it already re-renders for its own device poll.
+ */
+export interface HarmonyLiveFrameMetrics {
+  channel: "video" | "frames" | "idle";
+  phase: HarmonyLiveViewPhase;
+  drawnFrames: number;
+  /** Drawn frames per second since this connection started. */
+  drawnFps: number;
+  droppedFrames: number;
+  firstFrameMs: number | null;
+  lastRecoveryMs: number | null;
+  queueDepth: number;
+  backlogBytes: number;
+  /** Forced reconnects used to obtain a fresh keyframe after a backlog stall. */
+  resyncs: number;
+  screenProbes: number;
+  screenProbeFailures: number;
+  screen: HarmonyScreenState | null;
+}
+
 interface UseHarmonyLiveFrameOptions {
   active: boolean;
   enabled: boolean;
@@ -26,6 +53,8 @@ interface UseHarmonyLiveFrameOptions {
   fallbackError: string;
   chinese?: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
+  /** Device list state; a device that is not online never opens a stream. */
+  online?: boolean;
 }
 
 const VIDEO_CONFIG = 0x02;
@@ -35,6 +64,12 @@ const RAW_RGBA = 1;
 const JPEG = 2;
 const STABLE_STREAM_FRAMES = 30;
 const STABLE_STREAM_MS = 5_000;
+/** A plain failure retries first; the compatible preview only follows afterwards. */
+const MAX_VIDEO_FAILURES_BEFORE_COMPATIBLE = 3;
+/** One waiting-window length before the screen state is re-evaluated. */
+const UNLOCK_WAIT_WINDOW_MS = 30_000;
+const BUSY_PROBE_WINDOW_MS = 10_000;
+const BUSY_SCREENSHOT_INTERVAL_MS = 1_500;
 
 type StreamConfig = {
   initialPreview?:boolean;
@@ -54,6 +89,8 @@ type StreamAttempt = {
   geometryId?: string;
   controller: AbortController;
   watchdog?: number;
+  /** Bounded escape from waiting for a keyframe that may never arrive. */
+  resyncTimer?: number;
   reader?: ReadableStreamDefaultReader<Uint8Array>;
   failure?: Error;
   startedAt: number;
@@ -174,6 +211,14 @@ function reconnectDelay(failures: number): number {
   return Math.min(8_000, 250 * (2 ** Math.min(Math.max(0, failures - 1), 5)));
 }
 
+function emptyMetrics(): HarmonyLiveFrameMetrics {
+  return {
+    channel: "idle", phase: "offline", drawnFrames: 0, drawnFps: 0, droppedFrames: 0,
+    firstFrameMs: null, lastRecoveryMs: null, queueDepth: 0, backlogBytes: 0, resyncs: 0,
+    screenProbes: 0, screenProbeFailures: 0, screen: null,
+  };
+}
+
 export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [visibilityEpoch, setVisibilityEpoch] = useState(0);
   const previewLifecycle = useRef<AbortController | null>(null);
@@ -185,6 +230,9 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   const [videoBlocked, setVideoBlocked] = useState(false);
   const [videoRecovery, setVideoRecovery] = useState<HarmonyRequestError['videoRecovery']>();
+  const [screen, setScreen] = useState<HarmonyScreenState | null>(null);
+  const [phase, setPhase] = useState<HarmonyLiveViewPhase>("offline");
+  const metricsRef = useRef<HarmonyLiveFrameMetrics>(emptyMetrics());
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   useEffect(() => {
@@ -198,6 +246,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   }, []);
 
   useEffect(() => {
+    const metrics = metricsRef.current;
     if (!options.active || !options.enabled || !options.serial || options.generation === undefined) {
       setFrame(null);
       setStatus("idle");
@@ -206,11 +255,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       setFallbackReason(null);
       setVideoBlocked(false);
       setVideoRecovery(undefined);
+      setScreen(null);
+      setPhase("offline");
+      metrics.channel = "idle"; metrics.phase = "offline";
       return;
     }
     if (options.paused || document.hidden) {
       setFrame(current => current?.geometryId ? { ...current, geometryId: undefined } : current);
       setStatus("idle");
+      setPhase("paused");
+      metrics.phase = "paused";
       return;
     }
 
@@ -227,6 +281,58 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let activeAttempt: StreamAttempt | undefined;
     let drawingCanvas: HTMLCanvasElement | null = null;
     let drawingContext: CanvasRenderingContext2D | null = null;
+    // Phase inputs are mirrored locally because React state is not readable
+    // synchronously inside the reconnect loop.
+    let localMode: HarmonyFrameMode = "video";
+    let localStatus: HarmonyFrameStatus = "loading";
+    let localBlocked = false;
+    let localScreen: HarmonyScreenState | null = null;
+    let screenSignature = "unknown";
+    let wakeRetry: (() => void) | null = null;
+    let wakeProbe: (() => void) | null = null;
+    /** Increments on every unusable → usable transition. */
+    let usableEpoch = 0;
+    let lastUsable = false;
+    const backlog = new VideoBacklog();
+    /** Compressed sizes submitted to the decoder and not yet emitted. */
+    const pendingSizes: number[] = [];
+    let awaitingKeyframe = false;
+    let awaitingSince: number | null = null;
+    let queueDepth = 0;
+    let publishedFirstFrame = false;
+    const streamStartedAt = performance.now();
+    const online = options.online !== false;
+
+    const publishPhase = () => {
+      const next = resolveLiveViewPhase({
+        enabled: true, paused: false, online, awake: localScreen?.awake, locked: localScreen?.locked,
+        mode: localMode, status: localStatus, videoBlocked: localBlocked,
+      });
+      metrics.phase = next;
+      setPhase(current => current === next ? current : next);
+      return next;
+    };
+    const updateScreenState = (next: HarmonyScreenState | null) => {
+      localScreen = next;
+      metrics.screen = next;
+      const signature = screenStateSignature(next ?? undefined);
+      if (signature !== screenSignature) {
+        const previous = screenSignature;
+        screenSignature = signature;
+        setScreen(next);
+        // The phone just became usable again: skip the remaining backoff.
+        if (next && canStartVideoStream(next) && previous !== "unknown") wakeRetry?.();
+      }
+      const usable = Boolean(next && canStartVideoStream(next));
+      if (usable && !lastUsable) {
+        // Any waiting window must be able to end on this transition, including
+        // the screenshot window that follows plain stream failures.
+        usableEpoch += 1;
+      }
+      lastUsable = usable;
+      publishPhase();
+    };
+    const policy = () => liveViewPolicy(publishPhase());
     const contextFor = (canvas: HTMLCanvasElement) => {
       if (drawingCanvas !== canvas) {
         drawingCanvas = canvas;
@@ -234,6 +340,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       }
       return drawingContext;
     };
+    const setLocalMode = (next: HarmonyFrameMode) => { localMode = next; metrics.channel = next === "video" ? "video" : next === "frames" ? "frames" : "idle"; setMode(next); };
+    const setLocalStatus = (next: HarmonyFrameStatus) => { localStatus = next; setStatus(next); };
     const closeDecoder = () => {
       // A stream can change configuration without replacing its connection.
       // Invalidate callbacks before close, which may itself deliver an error.
@@ -241,6 +349,11 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       // WebCodecs closes itself after a fatal decode error.
       if (decoder && decoder.state !== "closed") decoder.close();
       decoder = undefined;
+      backlog.clear();
+      pendingSizes.length = 0;
+      awaitingKeyframe = false;
+      awaitingSince = null;
+      queueDepth = 0;
     };
     const armWatchdog = (attempt: StreamAttempt,timeoutMs=15000) => {
       window.clearTimeout(attempt.watchdog);
@@ -255,13 +368,18 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         void attempt.reader?.cancel(attempt.failure).catch(() => undefined);
       }, timeoutMs);
     };
+
     setFrame(null);
-    setStatus("loading");
-    setMode("video");
+    setLocalStatus("loading");
+    setLocalMode("video");
     setError(null);
     setFallbackReason(null);
     setVideoBlocked(false);
     setVideoRecovery(undefined);
+    localBlocked = false;
+    metrics.drawnFrames = 0; metrics.droppedFrames = 0; metrics.firstFrameMs = null;
+    metrics.lastRecoveryMs = null; metrics.screenProbes = 0; metrics.screenProbeFailures = 0; metrics.resyncs = 0;
+    publishPhase();
     const initialCanvas = options.canvasRef.current;
     if (initialCanvas) contextFor(initialCanvas)?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
 
@@ -295,8 +413,13 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       if (attempt.geometryConfig && !attempt.geometryRefreshing && attempt.geometryTimer === undefined) void refreshGeometry(attempt, attempt.geometryConfig);
       revision += 1;
       attempt.decodedFrames += 1;
+      metrics.drawnFrames += 1;
+      const elapsedSeconds = (performance.now() - streamStartedAt) / 1000;
+      if (elapsedSeconds > 0.25) metrics.drawnFps = Math.round((metrics.drawnFrames / elapsedSeconds) * 10) / 10;
+      if (!publishedFirstFrame) { publishedFirstFrame = true; metrics.firstFrameMs = Math.round(performance.now() - streamStartedAt); }
       armWatchdog(attempt);
       if (attempt.decodedFrames >= STABLE_STREAM_FRAMES || performance.now() - attempt.startedAt >= STABLE_STREAM_MS) {
+        if (failures > 0) metrics.lastRecoveryMs = Math.round(performance.now() - attempt.startedAt);
         failures = 0;
       }
       const nextFrame = { serial: options.serial, generation: options.generation!, revision, width, height, geometryId: attempt.geometryId,initialPreview:config?.initialPreview===true };
@@ -306,11 +429,11 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       } else {
         setFrame((current) => current && current.width === width && current.height === height && current.geometryId === nextFrame.geometryId&&current.initialPreview===nextFrame.initialPreview ? current : nextFrame);
       }
-      setStatus("live");
+      setLocalStatus("live");
       setError(null);
       setFallbackReason(config?.initialPreview?(options.chinese?'视频通道已连接，先显示当前预览；画面变化后切入实时视频。':'Video connected; showing initial preview until the screen changes.'):null);
-      setVideoBlocked(false);
-      setVideoRecovery(undefined);
+      if (localBlocked) { localBlocked = false; setVideoBlocked(false); setVideoRecovery(undefined); }
+      publishPhase();
     };
 
     const drawVideoFrame = (videoFrame: VideoFrame, attempt: StreamAttempt) => {
@@ -352,6 +475,12 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             videoFrame.close();
             return;
           }
+          // One compressed unit left the decoder queue for one emitted frame.
+          const released = pendingSizes.shift() ?? 0;
+          if (released) backlog.release(released);
+          if (queueDepth > 0) queueDepth -= 1;
+          metrics.queueDepth = queueDepth;
+          metrics.backlogBytes = backlog.queuedBytes;
           drawVideoFrame(videoFrame, attempt);
         },
         error: (decodeError) => {
@@ -402,7 +531,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     const processPacket = async (type: number, payload: Uint8Array, attempt: StreamAttempt) => {
       if (type === VIDEO_CONFIG) {
         config = parseConfig(payload);
-        setMode(config.initialPreview?'frames':'video');
+        setLocalMode(config.initialPreview?'frames':'video');
         window.clearTimeout(attempt.geometryTimer);
         attempt.geometryTimer = undefined;
         attempt.geometryConfig = config;
@@ -410,6 +539,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         attempt.geometryId = undefined;
         setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
         await configureDecoder(config, attempt);
+        publishPhase();
         return;
       }
       if (type !== VIDEO_FRAME || !config || payload.length < 9) return;
@@ -420,6 +550,56 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       if (config.codec === H264) {
         if (!decoder || decoder.state !== "configured") return;
         if (!firstKeyframe && !keyframe) return;
+        queueDepth = decoder.decodeQueueSize;
+        /**
+         * A broken reference chain can only resume on a keyframe. This native
+         * source emits nothing while the screen is static, so the wait is
+         * bounded: the timer below forces a fresh IDR (reconnect) instead of
+         * leaving a stale picture on screen forever.
+         */
+        const requestResync = () => {
+          window.clearTimeout(attempt.resyncTimer);
+          attempt.resyncTimer = undefined;
+          awaitingSince = null;
+          metrics.resyncs += 1;
+          const failure = new Error("Harmony video did not resynchronise after a preview backlog");
+          attempt.failure = failure;
+          attempt.controller.abort();
+          void attempt.reader?.cancel(failure).catch(() => undefined);
+        };
+        const beginKeyframeWait = () => {
+          if (awaitingSince !== null) return;
+          awaitingSince = performance.now();
+          window.clearTimeout(attempt.resyncTimer);
+          attempt.resyncTimer = window.setTimeout(() => {
+            attempt.resyncTimer = undefined;
+            if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted) return;
+            if (awaitingKeyframe) requestResync();
+          }, KEYFRAME_WAIT_LIMIT_MS);
+        };
+        const admission = admitVideoUnit({
+          keyframe, awaitingKeyframe,
+          backlog: backlog.sample(performance.now(), queueDepth),
+        });
+        awaitingKeyframe = admission.awaitingKeyframe;
+        metrics.queueDepth = queueDepth;
+        metrics.backlogBytes = backlog.queuedBytes;
+        if (!admission.submit) {
+          // Dependent frames may not be dropped individually. Skipping them is
+          // safe only because the next keyframe restarts the reference chain;
+          // the device encoder and the server recording are unaffected.
+          metrics.droppedFrames += 1;
+          beginKeyframeWait();
+          return;
+        }
+        if (awaitingSince !== null && keyframeWaitExpired(awaitingSince, performance.now())) {
+          // The timer was throttled (background tab) but the deadline passed.
+          requestResync();
+          throw attempt.failure ?? new Error("Harmony video did not resynchronise after a preview backlog");
+        }
+        window.clearTimeout(attempt.resyncTimer);
+        attempt.resyncTimer = undefined;
+        awaitingSince = null;
         if (decoder.decodeQueueSize > 8) {
           const pendingDecoder = decoder;
           const available = await waitForDecoderCapacity(pendingDecoder, attempt.controller.signal);
@@ -435,6 +615,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           }
         }
         const chunkData = keyframe ? keyframeData(config, data) : startCodedUnit(data);
+        pendingSizes.push(chunkData.byteLength);
+        backlog.push(chunkData.byteLength, performance.now());
         decoder.decode(new EncodedVideoChunk({ type: keyframe ? "key" : "delta", timestamp, data: chunkData }));
         if (keyframe) firstKeyframe = true;
       } else if (config.codec === JPEG) {
@@ -460,16 +642,59 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       }
     };
 
-    const pollFrames = async (durationMs=Infinity, intervalMs=120) => {
-      const until=performance.now()+durationMs;
+    /** Sleep that a screen-state change can cut short. */
+    const waitRetry = (milliseconds: number): Promise<void> => new Promise<void>((resolveWait) => {
+      if (lifecycle.signal.aborted) { resolveWait(); return; }
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        lifecycle.signal.removeEventListener("abort", finish);
+        if (wakeRetry === finish) wakeRetry = null;
+        resolveWait();
+      };
+      const timer = window.setTimeout(finish, milliseconds);
+      lifecycle.signal.addEventListener("abort", finish, { once: true });
+      wakeRetry = finish;
+    });
+
+    /** The same short-circuit for the probing loop itself. */
+    const waitProbe = (milliseconds: number): Promise<void> => new Promise<void>((resolveWait) => {
+      if (lifecycle.signal.aborted) { resolveWait(); return; }
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        lifecycle.signal.removeEventListener("abort", finish);
+        if (wakeProbe === finish) wakeProbe = null;
+        resolveWait();
+      };
+      const timer = window.setTimeout(finish, milliseconds);
+      lifecycle.signal.addEventListener("abort", finish, { once: true });
+      wakeProbe = finish;
+    });
+
+    /**
+     * Screenshot fallback. The interval comes from the phase policy, so a
+     * compatible preview costs 1～2 screenshots per second and a locked phone
+     * costs one every two seconds. `shouldStop` lets the video channel reclaim
+     * the preview as soon as the phone becomes usable again.
+     */
+    const pollFrames = async (settings: { intervalMs: number | (() => number); maxMs?: number; shouldStop?: () => boolean }) => {
+      const startedAt = performance.now();
       let fallbackGeometry: { width: number; height: number; geometryId: string } | undefined;
       let fallbackGeometryCheckedAt = 0;
       let fallbackFailures = 0;
-      setMode("frames");
+      setLocalMode("frames");
       closeDecoder();
       config = undefined;
       firstKeyframe = false;
-      while (!lifecycle.signal.aborted&&performance.now()<until) {
+      publishPhase();
+      while (!lifecycle.signal.aborted) {
+        if (settings.maxMs !== undefined && performance.now() - startedAt >= settings.maxMs) return;
+        if (settings.shouldStop?.()) return;
         if (document.hidden) {
           await delay(1_000, lifecycle.signal);
           continue;
@@ -495,12 +720,13 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             }
             contextFor(canvas)?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
             hasFrame = true;
+            metrics.drawnFrames += 1;
             if (fallbackGeometry?.width !== bitmap.width || fallbackGeometry?.height !== bitmap.height || performance.now() - fallbackGeometryCheckedAt > 1500) {
               // Keep verified geometry during a same-size refresh so polling cannot cancel an in-progress mouse gesture.
               if (fallbackGeometry?.width !== bitmap.width || fallbackGeometry?.height !== bitmap.height) fallbackGeometry = undefined;
               fallbackGeometryCheckedAt = performance.now();
               setFrame({ geometryId: fallbackGeometry?.geometryId, serial: options.serial, generation, revision: frameRevision, width: bitmap.width, height: bitmap.height });
-              setStatus("live");
+              setLocalStatus("live");
               setError(null);
               const response = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=screenshot`, { cache: "no-store", signal: lifecycle.signal }).catch(() => null);
               fallbackGeometry = undefined;
@@ -520,13 +746,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
               width: bitmap.width,
               height: bitmap.height,
             });
-            setStatus("live");
+            setLocalStatus("live");
             setError(null);
             fallbackFailures = 0;
+            publishPhase();
           } finally {
             bitmap.close();
           }
-          await delay(intervalMs, lifecycle.signal);
+          // Waiting through a wakeable sleep lets a confirmed unlock replace
+          // the remaining interval instead of always paying for a full tick.
+          await waitRetry(typeof settings.intervalMs === "function" ? settings.intervalMs() : settings.intervalMs);
         } catch (frameError) {
           if (lifecycle.signal.aborted || disposed) return;
           fallbackFailures += 1;
@@ -534,14 +763,15 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           // screenshot. Keep the last frame visible and retry instead of
           // presenting the device as unavailable while the Agent is working.
           if (!hasFrame) {
-            setStatus("error");
+            setLocalStatus("error");
             setError(frameError instanceof Error ? frameError.message : options.fallbackError);
           } else {
-            setStatus("error");
+            setLocalStatus("error");
             setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
             fallbackGeometry = undefined;
             setError(frameError instanceof Error ? frameError.message : options.fallbackError);
           }
+          publishPhase();
           await delay(Math.min(4_000, 250 * (2 ** Math.min(fallbackFailures - 1, 4))), lifecycle.signal);
         }
       }
@@ -549,6 +779,17 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
 
     const connect = async () => {
       while (!lifecycle.signal.aborted) {
+        // A locked or sleeping phone cannot serve H.264. Wait in a cheap
+        // preview/probe window instead of burning the failure backoff.
+        if (localScreen && !canStartVideoStream(localScreen)) {
+          await pollFrames({
+            intervalMs: liveViewPolicy("waiting-unlock").screenshotIntervalMs,
+            maxMs: UNLOCK_WAIT_WINDOW_MS,
+            shouldStop: () => Boolean(localScreen && canStartVideoStream(localScreen)),
+          });
+          if (lifecycle.signal.aborted || disposed) return;
+          continue;
+        }
         const attempt: StreamAttempt = {
           controller: new AbortController(),
           startedAt: performance.now(),
@@ -557,6 +798,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         };
         activeAttempt = attempt;
         // A previous PID describes a past rejection, not the in-flight probe.
+        localBlocked = false;
         setVideoBlocked(false);
         setVideoRecovery(undefined);
         setFallbackReason(hasFrame ? (options.chinese ? '正在重新检查视频通道…' : 'Checking the video channel again…') : null);
@@ -565,7 +807,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         // Preparing the reusable driver and native channel has its own bounded
         // startup budget. Do not cancel it using the decoder's frame budget.
         armWatchdog(attempt,45000);
-        if (!hasFrame) setStatus("loading");
+        if (!hasFrame) setLocalStatus("loading");
+        publishPhase();
         try {
           const response = await fetch(`/api/harmony/video?serial=${encodeURIComponent(options.serial)}`, {
             cache: "no-store",
@@ -586,10 +829,13 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         } catch (streamError) {
           window.clearTimeout(attempt.watchdog);
           window.clearTimeout(attempt.geometryTimer);
+          window.clearTimeout(attempt.resyncTimer);
           attempt.controller.abort();
           if (lifecycle.signal.aborted || disposed) return;
           failures += 1;
-          setStatus("error");
+          // A failure is the first reason to ask the device about its screen.
+          wakeProbe?.();
+          setLocalStatus("error");
           setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
           const failure = attempt.failure ?? streamError;
           const blocked = failure instanceof HarmonyRequestError && failure.videoBlocked;
@@ -597,48 +843,112 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             : failure instanceof Error ? failure.message : options.fallbackError;
           setError(reason);
           setFallbackReason(reason);
+          localBlocked = blocked;
           setVideoBlocked(blocked);
           setVideoRecovery(failure instanceof HarmonyRequestError ? failure.videoRecovery : undefined);
           closeDecoder();
           config = undefined;
           firstKeyframe = false;
-          if (blocked || (!hasFrame && failures >= 1) || failures >= 3) {
+          if (activeAttempt === attempt) activeAttempt = undefined;
+          // A locked screen is a known waiting state, not a decoder failure: it
+          // gets a passive probe and a cheap preview, never a growing backoff.
+          if (failure instanceof HarmonyRequestError && failure.code === "SCREEN_LOCKED") {
+            await attempt.jpegChain.catch(() => undefined);
+            updateScreenState({ awake: true, locked: true });
+            continue;
+          }
+          if (blocked || failures >= MAX_VIDEO_FAILURES_BEFORE_COMPATIBLE) {
             // The packaged low-latency video service is not available on every
             // device/decoder combination. Fall back to the existing bounded
             // screenshot endpoint so observation remains available while the
             // Agent holds the exclusive write lease.
             await attempt.jpegChain.catch(() => undefined);
-            if (activeAttempt === attempt) activeAttempt = undefined;
             // An external encoder is a known contention state, not a decoder
             // failure. Keep a low-rate preview and probe release every 10s.
-            await pollFrames(blocked ? 10_000 : Math.min(120000,30000*2**Math.min(Math.max(0,failures-1),2)), blocked ? 1500 : 120);
+            const windowStartEpoch = usableEpoch;
+            await pollFrames(blocked
+              ? { intervalMs: BUSY_SCREENSHOT_INTERVAL_MS, maxMs: BUSY_PROBE_WINDOW_MS }
+              // The usual fallback window follows the phase policy, so a locked
+              // phone costs one screenshot per two seconds instead of 750 ms,
+              // and a confirmed unlock ends the window instead of waiting out
+              // the full 30～120 s budget.
+              : { intervalMs: () => policy().screenshotIntervalMs, maxMs: Math.min(120000, 30000 * 2 ** Math.min(Math.max(0, failures - 1), 2)),
+                  shouldStop: () => usableEpoch !== windowStartEpoch });
             if(lifecycle.signal.aborted||disposed)return;
-            setMode('video');
+            setLocalMode("video");
+            publishPhase();
             continue;
           }
           await attempt.jpegChain.catch(() => undefined);
-          await delay(reconnectDelay(failures), lifecycle.signal);
+          await waitRetry(reconnectDelay(failures));
         } finally {
           window.clearTimeout(attempt.watchdog);
           window.clearTimeout(attempt.geometryTimer);
+          window.clearTimeout(attempt.resyncTimer);
           lifecycle.signal.removeEventListener("abort", abortAttempt);
           if (activeAttempt === attempt) activeAttempt = undefined;
         }
       }
     };
 
+    /**
+     * Passive lock-state probing.
+     *
+     * It stays idle until the panel has a reason to care (a failed attempt or a
+     * known lock reading), so a healthy stream never pays for an extra device
+     * command. While the phone is live it degrades to a slow heartbeat that only
+     * notices the screen turning off.
+     */
+    const probeScreenState = async () => {
+      while (!disposed && !lifecycle.signal.aborted) {
+        // Nothing has been drawn and nothing has failed yet, so there is no
+        // reason to spend a device command on the lock state.
+        if (document.hidden || (!hasFrame && failures === 0 && localScreen === null)) {
+          await waitProbe(30_000);
+          continue;
+        }
+        try {
+          metrics.screenProbes += 1;
+          const response = await fetch(`/api/harmony/screen-state?serial=${encodeURIComponent(options.serial)}`, { cache: "no-store", signal: lifecycle.signal });
+          if (response.ok) {
+            const payload = await response.json() as { awake?: unknown; locked?: unknown };
+            if (typeof payload?.awake === "boolean" && typeof payload?.locked === "boolean") {
+              const usable = payload.awake && payload.locked === false;
+              updateScreenState({ awake: payload.awake, locked: payload.locked });
+              // The phone turned off mid-stream: drop the stream and wait.
+              if (!usable && activeAttempt && !activeAttempt.controller.signal.aborted) {
+                activeAttempt.failure = new Error("Harmony screen is no longer usable");
+                activeAttempt.controller.abort();
+              }
+            }
+          } else {
+            metrics.screenProbeFailures += 1;
+          }
+        } catch {
+          // A failed probe keeps the previous reading; it is not a device error.
+          if (lifecycle.signal.aborted || disposed) return;
+          metrics.screenProbeFailures += 1;
+        }
+        if (disposed || lifecycle.signal.aborted) return;
+        await delay(policy().screenProbeIntervalMs, lifecycle.signal);
+      }
+    };
     void connect();
+    void probeScreenState();
     return () => {
       disposed = true;
       lifecycle.abort();
       if (previewLifecycle.current === lifecycle) previewLifecycle.current = null;
       window.clearTimeout(activeAttempt?.watchdog);
       window.clearTimeout(activeAttempt?.geometryTimer);
+      window.clearTimeout(activeAttempt?.resyncTimer);
+      wakeRetry = null;
+      wakeProbe = null;
       closeDecoder();
       void activeAttempt?.reader?.cancel().catch(() => undefined);
       void activeAttempt?.jpegChain.catch(() => undefined);
     };
-  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey, visibilityEpoch]);
+  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.online, options.paused, options.serial, refreshKey, visibilityEpoch]);
 
-  return { frame, status, mode, error, fallbackReason, videoBlocked, videoRecovery, refresh };
+  return { frame, status, mode, error, fallbackReason, videoBlocked, videoRecovery, refresh, phase, screen, metrics: metricsRef.current };
 }

@@ -2,19 +2,22 @@
 
 import { brandText } from "@/lib/branding";
 
-import { Component, useCallback, useEffect, useId, useMemo, useRef, useState, type ErrorInfo, type ReactNode, type CSSProperties } from "react";
+import { Component, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ErrorInfo, type ReactNode, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { useHarmonyManualControl } from "@/hooks/useHarmonyManualControl";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
+import { LogSessionContext } from "../../../src/log-session";
+import { recommendVideoQuality, QUALITY_HOLD_MS } from "@/lib/harmony/media/video-quality";
+import { isComposingKey } from "@dsh-log-search-menu";
 import { beginFrameGesture, moveFrameGesture, finishFrameGesture, type FramePointerGesture } from "@/lib/harmony/observation/frame-gesture";
 import { formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
 import { currentHarmonyResponseSample, normalizeHarmonyResponseSample, type HarmonyResponseSample } from "@/lib/harmony/device-connection";
 import { HarmonyRequestError } from "@/lib/harmony/request-error";
 import { copyText } from "@/lib/clipboard";
 import { AliIcon } from "../AliIcon";
-import { HarmonyLogViewer } from "./HarmonyLogViewer";
+import { LogWorkbenchShell } from "./harmony/LogWorkbenchShell";
 import { WorkbenchTools } from "./harmony/WorkbenchTools";
 import { MediaHistory } from "./harmony/MediaHistory";
 import { TcpDeviceConnection } from "./harmony/TcpDeviceConnection";
@@ -313,15 +316,20 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     videoBlocked: frameVideoBlocked,
     videoRecovery: frameVideoRecovery,
     refresh: requestFrame,
+    phase: framePhase,
+    screen: frameScreen,
+    metrics: frameMetrics,
   } = useHarmonyLiveFrame({
     active: active && desktopAvailable,
     enabled: Boolean(selectedOnline),
+    online: Boolean(selectedOnline),
     serial: selectedSerial,
     generation: selectedGeneration,
     canvasRef: frameRef,
     chinese,
     fallbackError: copy("投屏暂不可用，请检查设备授权与 HDC。", "Live view unavailable. Check device authorization and HDC."),
   });
+  const logSession = useContext(LogSessionContext);
 
   useEffect(() => {
     setFrameSize(liveFrame ? { width: liveFrame.width, height: liveFrame.height } : null);
@@ -739,6 +747,15 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
     </header>
 
+    {/* Fixed entry: the device page and the log workbench are two views of the
+        same panel, so neither needs a per-session button to reach the other. */}
+    <nav className={styles.panelViews} role="tablist" aria-label={copy("工作台视图", "Workbench views")}>
+      <button role="tab" type="button" aria-selected={!toolsOpen || toolTab !== "logs"} data-view="device"
+        onClick={() => { if (toolsOpen && toolTab === "logs") closeTools(); }}>{copy("设备", "Device")}</button>
+      <button role="tab" type="button" aria-selected={toolsOpen && toolTab === "logs"} data-view="logs"
+        onClick={() => openTools("logs")}>{copy("日志工作台", "Log workbench")}</button>
+    </nav>
+
     {settingsOpen ? <section className={styles.settingsPanel} aria-label={copy("设备设置", "Device settings")}>
       <div className={styles.settingsHeading}>
         <span><strong>{copy("设备设置", "Device settings")}</strong><small>{copy("通常只需设置一次", "Usually a one-time setup")}</small></span>
@@ -843,17 +860,21 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
         onPointerCancel={() => { framePanRef.current = null; }}
       >
       <div className={styles.frame} data-zoom={frameZoom}>
-        {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} data-video-error={frameFallbackReason ?? undefined} aria-live="polite">
-          <span />{frameVideoBlocked ? copy("投屏通道占用 · 等待释放", "Video channel busy · waiting for release") : frameStatus === "error"
+        {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} data-phase={framePhase} data-video-error={frameFallbackReason ?? undefined} aria-live="polite">
+          <span />{framePhase === "waiting-unlock"
+            ? frameScreen?.awake === false ? copy("手机已熄屏 · 唤醒并解锁后自动连接", "Screen off · connects automatically after you wake and unlock") : copy("手机已锁屏 · 解锁后自动连接", "Phone locked · connects automatically after you unlock")
+            : frameVideoBlocked ? copy("投屏通道占用 · 等待释放", "Video channel busy · waiting for release") : frameStatus === "error"
             ? frameMode === "frames" ? copy("兼容投屏重试中", "Retrying compatible view") : copy("视频流重连中", "Reconnecting stream")
             : frameStatus === "loading"
               ? frameMode === "frames" ? copy("切换兼容投屏", "Switching to compatible view") : copy("视频流连接中", "Connecting stream")
             : liveFrame?.initialPreview ? copy("实时视频准备中 · 当前预览", "Preparing live video · current preview") : frameMode === "frames" ? copy("兼容投屏 · 自动刷新", "Compatible view · auto refresh") : copy("实时视频流", "Live video")}
           {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ""}
         </div> : null}
-        {selectedOnline && frameMode === "frames" && (frameStatus === "live" || frameVideoBlocked) ? <div className={styles.frameVideoActions}>
-          {!liveFrame?.initialPreview?<button className={styles.frameVideoSetup} type="button" disabled={busy}
-            onClick={connectLiveVideo}>{frameVideoBlocked ? copy("重试实时视频", "Retry live video") : copy("接入实时视频", "Connect live video")}</button>:null}
+        {selectedOnline ? <div className={styles.frameVideoActions} data-visible={(framePhase === "waiting-unlock" || frameStatus === "error" || frameVideoBlocked) ? "true" : "false"}>
+          {/* Live video connects on its own. This stays only as the secondary
+              manual retry for an abnormal state. */}
+          <button className={styles.frameVideoSetup} type="button" hidden={!(framePhase === "waiting-unlock" || frameStatus === "error" || frameVideoBlocked)} disabled={busy}
+            onClick={connectLiveVideo}>{frameVideoBlocked ? copy("重试实时视频", "Retry live video") : copy("立即重试", "Retry now")}</button>
           {frameVideoBlocked && frameVideoRecovery ? <button className={styles.frameVideoSetup} type="button" disabled={busy||!canControl}
             onClick={releaseVideoConflict}>{copy('释放占用并重连','Release video and reconnect')}</button>:null}
           {frameFallbackReason ? <small data-video-fallback-reason title={frameFallbackReason}>{frameFallbackReason}</small> : null}
@@ -912,8 +933,14 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
         onPointerMove={event => { if (resizingLog.current !== event.pointerId) return; const bounds = workspaceRef.current?.getBoundingClientRect(); if (!bounds) return; const ratio = logLayout === "side" ? 100 * (bounds.right - event.clientX) / bounds.width : 100 * (bounds.bottom - event.clientY) / bounds.height; setLogRatio(Math.round(Math.max(32, Math.min(85, ratio)))); }}
         onPointerUp={() => { resizingLog.current = undefined; }} onPointerCancel={() => { resizingLog.current = undefined; }}
         onKeyDown={event => { const delta = ["ArrowLeft", "ArrowUp"].includes(event.key) ? 3 : ["ArrowRight", "ArrowDown"].includes(event.key) ? -3 : 0; if (delta) { event.preventDefault(); setLogRatio(value => Math.max(32, Math.min(85, value + delta))); } }} /> : null}
-      <section id={drawerId} className={styles.toolDrawer} data-tab={toolTab} hidden={!toolsOpen} aria-label={copy("设备工具", "Device tools")} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); closeTools(); } }}>
-        <div className={styles.drawerHeading}><strong>{toolTab === "logs" ? copy("实时日志", "Live logs") : copy("工具", "Tools")}{pluginVersion ? <small className={styles.pluginVersion}> · {pluginVersion}</small> : null}</strong><div className={styles.drawerHeadingActions}>
+      <section id={drawerId} className={styles.toolDrawer} data-tab={toolTab} hidden={!toolsOpen} aria-label={copy("设备工具", "Device tools")} onKeyDown={event => {
+        // An inner control (or an IME composition) owns this key: closing the
+        // whole tools drawer on the same Escape that closed a search box or
+        // confirmed a candidate would be wrong.
+        if (event.defaultPrevented || isComposingKey(event)) return;
+        if (event.key === "Escape") { event.stopPropagation(); closeTools(); }
+      }}>
+        <div className={styles.drawerHeading}><strong>{toolTab === "logs" ? copy("日志工作台", "Log workbench") : copy("工具", "Tools")}{pluginVersion ? <small className={styles.pluginVersion}> · {pluginVersion}</small> : null}</strong><div className={styles.drawerHeadingActions}>
           {toolTab === "logs" ? <><select aria-label={copy("日志布局", "Log layout")} value={logLayout} onChange={event => setLogLayout(event.target.value as typeof logLayout)}><option value="side">{copy("左右布局", "Side by side")}</option><option value="bottom">{copy("上下布局", "Stacked")}</option><option value="focus">{copy("专注日志", "Logs only")}</option></select><button type="button" onClick={() => { setLogLayout(logLayout === "focus" ? "side" : "focus"); }} aria-label={logLayout === "focus" ? copy("显示设备画面", "Show phone") : copy("收起设备画面", "Hide phone")}>{logLayout === "focus" ? copy("显示设备", "Show phone") : copy("专注日志", "Focus logs")}</button></> : null}
           {onMaximizedChange ? <button type="button" onClick={() => onMaximizedChange(!maximized)} aria-label={maximized ? copy("返回双栏", "Return to split view") : copy("展开设备工作台", "Expand device workbench")} title={maximized ? copy("返回双栏", "Return to split view") : copy("展开设备工作台", "Expand device workbench")}><AliIcon name={maximized ? "fullscreen-exit" : "fullscreen"} size={14} />{maximized ? copy("还原", "Restore") : copy("展开", "Expand")}</button> : null}
           <button className={styles.iconButton} type="button" onClick={closeTools} aria-label={copy("关闭工具", "Close tools")}><AliIcon name="close" size={15} /></button>
@@ -936,11 +963,33 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
 
           </div> : null}
           {toolsVisited ? <WorkbenchTools key={selectedSerial} tab={toolTab} serial={selectedSerial} active={active} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onControlHandoff={clearControl} geometryId={liveFrame?.geometryId} cwd={cwd} ownerId={ownerId} initialDatabaseId={databaseSelection} onOpenDatabase={id => { setDatabaseSelection(id); changeToolTab("databases"); }} onOpenFiles={() => changeToolTab("files")} onShowTasks={() => changeToolTab("tasks")} onOpenLocalTerminal={onOpenLocalTerminal} onCleanupConfirmed={async () => { setError(null); await refresh(); }} /> : null}
-          {toolTab === "logs" ? <HarmonyLogViewer active={active && toolsOpen} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} /> : null}
-          {toolTab === "diagnostics" ? <div className={styles.moreBody}>
+          {toolTab === "logs" ? <LogWorkbenchShell active={active && toolsOpen} serial={selectedSerial} online={Boolean(selectedOnline)}
+            sessionId={logSession.sessionId} copy={copy} onDraft={(text) => logSession.onAnalyze?.(text)} /> : null}          {toolTab === "diagnostics" ? <div className={styles.moreBody}>
             <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}>{copy("重连视频流", "Reconnect video")}</button>
             <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(() => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`), payload => setTree(payload.snapshot))}>{copy("读取界面结构", "Read interface structure")}</button>
-            <details className={styles.diagnostics}><summary>{copy("开发者信息", "Developer details")}</summary><pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre></details>
+            {/* Real measurements instead of a guess: channel, drawn frames,
+                backlog and first-frame time come from the live hook. */}
+            <div className={styles.frameMetrics} data-frame-metrics="">
+              <span>{copy("通道", "Channel")} <strong data-metric="channel">{frameMetrics.channel}</strong></span>
+              <span>{copy("阶段", "Phase")} <strong data-metric="phase">{frameMetrics.phase}</strong></span>
+              <span>{copy("绘制帧", "Drawn")} <strong data-metric="drawn">{frameMetrics.drawnFrames}</strong></span>
+              <span>{copy("跳过依赖帧", "Dropped")} <strong data-metric="dropped">{frameMetrics.droppedFrames}</strong></span>
+              <span>{copy("首帧", "First frame")} <strong data-metric="first">{frameMetrics.firstFrameMs === null ? "—" : `${frameMetrics.firstFrameMs} ms`}</strong></span>
+              <span>{copy("恢复", "Recovery")} <strong data-metric="recovery">{frameMetrics.lastRecoveryMs === null ? "—" : `${frameMetrics.lastRecoveryMs} ms`}</strong></span>
+              <span>{copy("解码队列", "Decoder queue")} <strong data-metric="queue">{frameMetrics.queueDepth}</strong></span>
+              <span>{copy("预览积压", "Backlog")} <strong data-metric="backlog">{frameMetrics.backlogBytes} B</strong></span>
+              <span title={copy("积压后等不到关键帧时强制重连取新 IDR 的次数", "Forced reconnects used to obtain a fresh keyframe")}>{copy("重同步", "Resyncs")} <strong data-metric="resyncs">{frameMetrics.resyncs}</strong></span>
+              <span>{copy("锁屏探测", "Lock probes")} <strong data-metric="probes">{frameMetrics.screenProbes}</strong></span>
+              <span>{copy("手机状态", "Screen")} <strong data-metric="screen">{frameScreen ? `${frameScreen.awake ? "awake" : "asleep"}/${frameScreen.locked === true ? "locked" : frameScreen.locked === false ? "unlocked" : "unknown"}` : "—"}</strong></span>
+              <span>{copy("绘制帧率", "Drawn fps")} <strong data-metric="fps">{frameMetrics.drawnFps}</strong></span>
+              {/* Advisory only: the tier is still the person's setting and is
+                  never switched behind their back, which would restart the encoder. */}
+              <span title={copy("只给出建议，不自动切换画质档位", "Advisory only; the quality tier is never switched automatically")}>{copy("建议画质", "Suggested tier")} <strong data-metric="quality">
+                {recommendVideoQuality(videoQuality, { panelWidth: liveFrame?.width ?? frameSize?.width ?? 0, drawnFramesPerSecond: frameMetrics.drawnFps,
+                  droppedFrames: frameMetrics.droppedFrames, backlogBytes: frameMetrics.backlogBytes, queueDepth: frameMetrics.queueDepth, sinceChangeMs: QUALITY_HOLD_MS }).quality}
+              </strong></span>
+            </div>
+            <details className={styles.diagnostics}><summary>{copy("开发者信息", "Developer details")}</summary><pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree, framePhase, frameScreen, frameMetrics }, null, 2)}</pre></details>
             <button className={styles.stopButton} type="button" disabled={busy} onClick={() => { clearControl(); void run(() => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "emergency_stop", reason: "desktop-global-stop" }) })); }}>{copy("停止所有设备操作", "Stop all devices")}</button>
           </div> : null}
         </div>
@@ -959,7 +1008,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
           {lease || holder || busy ? <button className={styles.stopButton} type="button" disabled={!selectedOnline} onClick={stopDevice} aria-label={copy("停止当前设备操作", "Stop this device")} title={copy("停止当前设备操作", "Stop this device")}><AliIcon name="stop" size={15} /></button> : null}
         </div>
     <footer className={styles.statusBar}>
-      <span title={copy("锁屏时请手动解锁，投屏不会自动唤醒或解锁。", "Unlock manually. Mirroring never wakes or unlocks your phone.")}>{controlStatus ? controlStatus === "stopping" ? copy("正在停止", "Stopping") : copy("等待恢复", "Recovery required") : selected?.connectionIssue === "hdc-channel-not-ready" ? copy("等待调试通信", "Waiting for debugging communication") : blocked && !agentHasControl ? copy("其他窗口正在操作", "Another window is operating") : selectedOnline && frameStatus === "live" && frameMatchesDevice ? frameInputEnabled ? copy("可点击拖动 · 已连接", "Click and drag connected") : copy("画面已连接 · 等待坐标校验", "View connected, checking input geometry") : selectedOnline ? copy("等待实时画面", "Waiting for live view") : sessionRunning ? copy("等待设备连接", "Waiting for a device") : copy("请连接设备", "Connect a device")}</span>
+      <span title={copy("锁屏时请手动解锁，投屏不会自动唤醒或解锁。", "Unlock manually. Mirroring never wakes or unlocks your phone.")}>{controlStatus ? controlStatus === "stopping" ? copy("正在停止", "Stopping") : copy("等待恢复", "Recovery required") : selected?.connectionIssue === "hdc-channel-not-ready" ? copy("等待调试通信", "Waiting for debugging communication") : blocked && !agentHasControl ? copy("其他窗口正在操作", "Another window is operating") : selectedOnline && framePhase === "waiting-unlock" ? (frameScreen?.awake === false ? copy("等待手机亮屏", "Waiting for the phone screen") : copy("等待解锁后自动连接", "Connects after you unlock")) : selectedOnline && frameStatus === "live" && frameMatchesDevice ? frameInputEnabled ? copy("可点击拖动 · 已连接", "Click and drag connected") : copy("画面已连接 · 等待坐标校验", "View connected, checking input geometry") : selectedOnline ? copy("等待实时画面", "Waiting for live view") : sessionRunning ? copy("等待设备连接", "Waiting for a device") : copy("请连接设备", "Connect a device")}</span>
       <div className={styles.footerActions}>
       {lease || holder || busy ? <button className={styles.stopButton} type="button" onClick={stopDevice} aria-label={copy("停止设备任务", "Stop device task")} title={copy("停止设备任务", "Stop device task")}><AliIcon name="stop" size={13} /></button> : null}
       <button ref={toolsButtonRef} type="button" aria-expanded={toolsOpen} aria-controls={drawerId} onClick={() => toolsOpen ? closeTools() : openTools()}>{copy("工具", "Tools")}<AliIcon name={toolsOpen ? "arrowdown" : "arrowup"} size={13} /></button>

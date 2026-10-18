@@ -51,19 +51,19 @@ test('invalid operation arguments and prior cancellation are rejected before dis
   await assert.rejects(bridge.tool.execute({ operation: 'help' }, { callId: 'no-session', signal: new AbortController().signal }), /active Harness session/);
 });
 
-test('unknown wait fields fail before device admission; E2E routing prevents query-to-direct bypass', async () => {
+test('unknown wait fields fail before device admission; human validation blocks control even with explicit direct execution', async () => {
   const exec = { agent: { id: 'routing-test' }, callId: 'routing-call', signal: new AbortController().signal };
   await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { milliseconds: 25000 } }, exec), /milliseconds.*Unexpected|Unexpected.*milliseconds/);
-  let busy = false;
-  const unregister = bridge.automation.taskRouting.register({ busy: () => busy });
+  const unregister = bridge.automation.taskRouting.register({ activeAttempt: sessionId => sessionId === 'routing-test' ? { taskId: 't-human', attemptId: 'a-human', mode: 'human', serial: 'fixture-device' } : null });
   try {
-    await assert.rejects(bridge.tool.execute({ operation: 'prepare_device', input: {} }, exec), /E2E_REQUIRED/);
-    await assert.rejects(bridge.tool.execute({ operation: 'tap', input: { ref: 'old', generation: 1 } }, exec), /E2E_REQUIRED/);
-    assert.equal(JSON.parse((await bridge.tool.execute({ operation: 'help', topic: 'wait' }, exec)).content[0].text).operation, 'wait');
-    const direct = await bridge.tool.execute({ operation: 'help', topic: 'wait', execution: 'direct', directReason: '只看接口' }, exec);
-    assert.match(direct.content.at(-1).text, /未创建 E2E/);
-    busy = true;
-    await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { waitMs: 100 }, execution: 'direct', directReason: '明确选择直控' }, exec), /E2E_ACTIVE/);
+    await assert.rejects(bridge.tool.execute({ operation: 'prepare_device', input: {} }, exec), /HUMAN_MODE_READ_ONLY/);
+    await assert.rejects(bridge.tool.execute({ operation: 'tap', input: { ref: 'old', generation: 1 } }, exec), /HUMAN_MODE_READ_ONLY/);
+    await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { waitMs: 100 }, execution: 'direct', directReason: '明确选择直控' }, exec), /HUMAN_MODE_READ_ONLY/);
   } finally { unregister(); }
+  assert.equal(JSON.parse((await bridge.tool.execute({ operation: 'help', topic: 'wait' }, exec)).content[0].text).operation, 'wait');
+  const direct = await bridge.tool.execute({ operation: 'help', topic: 'wait', execution: 'direct', directReason: '只看接口' }, exec);
+  assert.match(direct.content.at(-1).text, /未创建 dshVerify/);
+  assert.equal(direct.execution.kind, 'direct');
+  assert.equal(direct.execution.validationRecorded, false);
 });
 test.after(async () => { for (const cleanup of effects.reverse()) if (typeof cleanup === 'function') await cleanup(); await rm(home, { recursive: true, force: true }); });

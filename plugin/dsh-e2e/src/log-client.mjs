@@ -5,7 +5,7 @@ export function libraryUrl(sessionId, path, params = {}) {
 export async function libraryRequest(sessionId, path, { params, body, rawBody, ...options } = {}) {
   const response = await fetch(libraryUrl(sessionId, path, params), rawBody !== undefined ? { ...options, body: rawBody } : body === undefined ? options : { ...options, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const value = await response.json().catch(() => ({}));
-  if (!response.ok || value.error) throw Error(value.error || '日志库不可用，请确认 dshE2E 已启用并完整重启宿主');
+  if (!response.ok || value.error) throw Error(value.error || '日志库不可用，请确认配套日志插件已启用并完整重启宿主');
   return value;
 }
 export async function importLogFile(file, sessionId, { signal, onProgress = () => {}, sourceKind = 'import', snapshot, groupId, encoding = 'auto' } = {}) {

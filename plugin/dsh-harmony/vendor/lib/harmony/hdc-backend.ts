@@ -14,7 +14,7 @@ import { startOwnedRecording } from "./media/owned-recording";
 import { streamHdcLines } from "./log-stream";
 import { capabilitiesFromHelp } from "./capabilities/probes";
 import { physicalKeyCode, type PhysicalKey } from "./input/key-catalog";
-import { parseScreenState } from "./observation/screen-state";
+import { parseScreenState, parseHarmonyScreenState, type HarmonyScreenState } from "./observation/screen-state";
 import { setTimeout as delay } from "node:timers/promises";
 import { runBoundedHold } from "./input/bounded-hold";
 import { focusedWindowId, windowBundle } from "./observation/window-scope";
@@ -1060,6 +1060,20 @@ export class HdcBackend implements HarmonyAutomationBackend {
         details: { reason: lockState === "locked" ? "locked" : "lock-state-unknown" },
       });
     }
+  }
+
+  /**
+   * Passive lock/awake probe. It never injects a power key or a swipe, so the
+   * browser can poll it while waiting for the person to unlock the phone.
+   * A device that does not answer throws OBSERVATION_UNAVAILABLE instead of
+   * being reported as unlocked.
+   */
+  async readScreenState(serial: string, signal?: AbortSignal): Promise<HarmonyScreenState> {
+    validateSerial(serial);
+    const result = await this.shell(serial, ["hidumper", "-s", "ScreenlockService", "-a", "-all"], "screen_state_read", signal, 3000);
+    const state = parseHarmonyScreenState(result.stdout.toString("utf8"));
+    if (state.locked === undefined) throw new HarmonyError("OBSERVATION_UNAVAILABLE", "Cannot read the phone lock state", { details: { dispatchState: "not-sent" } });
+    return state;
   }
 
   async prepareDevice(serial: string, signal?: AbortSignal): Promise<void> {

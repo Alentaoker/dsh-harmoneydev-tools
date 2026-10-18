@@ -1,6 +1,9 @@
 import './profile-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { resolveLogTarget, startLogCollection, logPage, redactLog, logTime } from '../src/logs.mjs';
 import { createService } from '../src/service.mjs';
 import { apply } from '../src/agent.mjs';
@@ -53,26 +56,28 @@ test('日志保留上限、正文分页和级别过滤有效，密钥不会交�
   assert.equal(redactLog('password="some password"'), 'password=[redacted]');
   const now = Date.UTC(2027, 0, 1); assert.ok(logTime('01-01 00:00:01', now) > logTime('12-31 23:59:59', now));
 });
-test('默认缺日志目标在操作前失败；resolve_app 返回真实设备候选', async () => {
-  let inputs = 0;
-  const m = { async listDevices() { return [{ serial: 'TEST', state: 'online', capabilities: { tap: true, uiTree: true } }]; }, async acquireLease() { inputs++; }, async applications() { return [{ bundleName: 'test.app', label: '测试' }]; } };
-  const service = createService({ dshHarmony: { automation: { getManager: () => m } } });
+test('只装 dshE2E 时日志与历史可用；设备采集和查询给出缺 Harmony 的明确提示', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-e2e-alone-'));
+  const service = createService({}, root);
   try {
-    const run = await service.run({ goal: '检查界面', expectation: '界面可见', name: `missing-log-target-${Date.now()}` }, 'test', {});
-    assert.equal(run.status, 'failed'); assert.equal(inputs, 0); assert.equal(run.logCollection.status, 'unresolved');
-    assert.equal(run.diagnostics.entries.length, 0); assert.equal((await service.resolveApp('测试')).resolved, 'test.app');
-  } finally { await service.dispose(); }
+    const status = await service.status({ sessionId: 'unit' });
+    assert.equal(status.harmonyReady, false);
+    assert.deepEqual(status.devices, []);
+    assert.equal(status.format, 'validation-v1');
+    await assert.rejects(() => service.startCapture({ serial: 'TEST', logAppBundle: 'test.app' }, { sessionId: 'unit' }), /需要 dshHarmony/);
+    await assert.rejects(() => service.resolveApp('测试'), /需要 dshHarmony/);
+  } finally { await service.dispose(); await rm(root, { recursive: true, force: true }); }
 });
-test('AI 工具直接收到日志正文，get_logs 保留筛选参数', async () => {
+test('AI 工具读取日志正文；旧执行操作返回迁移说明而不是执行', async () => {
   let tool, options;
   const ctx = { effect(fn) { fn(); }, tools: { register(t) { tool = t; } }, systemPrompt: { section() {} }, dshE2E: {
-    async get() { return { id: 'run' }; }, summary() { return { id: 'run', status: 'passed' }; }, async report() { return { view: {} }; },
-    async getDiagnostics() { return { entries: [entry(1, '10-12 01:00:01', '错误详情', 'error')] }; },
+    validation: {},
     async getLogs(id, o) { options = o; return { id, entries: [entry(1, '10-12 01:00:01', '正文')] }; },
   } };
   apply(ctx); const exec = { signal: AbortSignal.timeout(2000), agent: { id: 'test' } };
-  const report = await tool.execute({ operation: 'get_report', id: 'run' }, exec);
-  assert.equal(report.diagnostics.entries[0].message, '错误详情');
   const logs = await tool.execute({ operation: 'get_logs', id: 'run', level: 'error', limit: 2 }, exec);
   assert.equal(logs.entries[0].message, '正文'); assert.equal(options.level, 'error'); assert.equal(options.limit, 2);
+  await assert.rejects(() => tool.execute({ operation: 'run', goal: '旧调用' }, exec), /已移除|内层执行器/);
+  await assert.rejects(() => tool.execute({ operation: 'replay', id: 'run' }, exec), /回放已移除/);
+  await assert.rejects(() => tool.execute({ operation: 'cancel', id: 'run' }, exec), /取消已移除|已退役/);
 });

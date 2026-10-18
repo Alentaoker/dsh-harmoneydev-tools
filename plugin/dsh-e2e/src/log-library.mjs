@@ -11,6 +11,7 @@ import { packageName, dictionaryName, importPackage, findHilogTool } from './log
 const idPattern = /^[0-9a-f-]{36}$/;
 export { parseImportedLog } from './log-parser.mjs';
 import { parseImportedLog } from './log-parser.mjs';
+import { compileLogQuery, validatePage } from './log-query.mjs';
 
 export function createLogLibrary(root, options = {}) {
   const base = resolve(root, 'log-library'), uploads = new Map(), locks = new Map(), selections = new Map(), workers = new Set();
@@ -124,6 +125,19 @@ export function createLogLibrary(root, options = {}) {
     }
     if (options.sort && !['newest', 'oldest', 'name', 'size'].includes(options.sort)) throw Error('日志排序参数无效');
     return values.sort((a, b) => (options.sort === 'name' ? a.name.localeCompare(b.name) : options.sort === 'oldest' ? a.createdAt.localeCompare(b.createdAt) : options.sort === 'size' ? b.size - a.size : b.createdAt.localeCompare(a.createdAt)) || a.id.localeCompare(b.id));
+  }
+  async function indexedMetadata(id, scope, signal) {
+    signal?.throwIfAborted();
+    let value = await metadata(id, scope);
+    if (!value.isPackage && value.storage !== 'blocks-v1') {
+      const migrationKey = owner(scope) + ':' + id;
+      if (!migrating.has(migrationKey)) {
+        const task = (async () => { const dir = await checked(directory(id, scope)); const result = await runWorker('index', { directory: dir, snapshot: value.snapshot }, signal); return locked(scope, async () => { const current = await metadata(id, scope), next = { ...current, ...result, legacyNormalizedBytes: current.normalizedBytes || 0, storedBytes: current.size + (current.normalizedBytes || 0) + result.bodyStoredBytes }; await saveMetadata(dir, next); return next; }); })().finally(() => migrating.delete(migrationKey)); migrating.set(migrationKey, task);
+      }
+      value = await migrating.get(migrationKey);
+    }
+    signal?.throwIfAborted();
+    return value;
   }
   async function trashed(scope) {
     const parent = join(base, 'trash', key(scope)), values = [];
@@ -250,15 +264,20 @@ export function createLogLibrary(root, options = {}) {
     },
     async usage(scope) { const ready = await files(scope), trash = await trashed(scope), bytes = values => values.reduce((sum, value) => sum + (value.storedBytes ?? value.size + (value.normalizedBytes || 0)), 0); let analysisCacheBytes = 0; for (const file of ready) analysisCacheBytes += (await stat(join(directory(file.id, scope), 'analysis.log')).catch(() => undefined))?.size || 0; return { files: ready.length, bytes: bytes(ready), analysisCacheBytes, trashFiles: trash.length, trashBytes: bytes(trash), instruction: '统计原始/压缩文件及正文块，分析缓存单列；不含索引、导入临时文件及文件系统开销' }; },
     async clearAnalysisCache(scope) { let removed = 0; for (const file of await files(scope)) { const path = join(directory(file.id, scope), 'analysis.log'); if (await stat(path).catch(() => undefined)) { await rm(await checked(path)); removed++; } } return { removed, errors: [] }; },
-    async getLogs(id, query, scope, signal) {
-      let value = await metadata(id, scope); const dir = await checked(directory(id, scope));
-      if (!value.isPackage && value.storage !== 'blocks-v1') {
-        const migrationKey = owner(scope) + ':' + id;
-        if (!migrating.has(migrationKey)) {
-          const task = (async () => { const result = await runWorker('index', { directory: dir, snapshot: value.snapshot }); return locked(scope, async () => { const current = await metadata(id, scope), next = { ...current, ...result, legacyNormalizedBytes: current.normalizedBytes || 0, storedBytes: current.size + (current.normalizedBytes || 0) + result.bodyStoredBytes }; await saveMetadata(dir, next); return next; }); })().finally(() => migrating.delete(migrationKey)); migrating.set(migrationKey, task);
-        }
-        value = await migrating.get(migrationKey);
+    async search(query, scope, signal) {
+      owner(scope); validatePage(query); compileLogQuery(query);
+      if (!String(query.query || '').trim()) throw Error('请输入跨文件筛选关键词');
+      const candidates = (await files(scope)).filter(file => !file.isPackage);
+      const ready = [];
+      for (const file of candidates) {
+        signal?.throwIfAborted();
+        const value = await indexedMetadata(file.id, scope, signal);
+        ready.push({ id: value.id, name: value.name, directory: await checked(directory(value.id, scope)) });
       }
+      return { ...await runWorker('search', { files: ready, options: query }, signal), sessionId: owner(scope) };
+    },
+    async getLogs(id, query, scope, signal) {
+      const value = await indexedMetadata(id, scope, signal), dir = await checked(directory(id, scope));
       const warnings = ['原始文件保留在本机；查看器中的敏感字段脱敏，超长行预览最多 8192 字符。' + (value.timeBasis || '')];
       warnings.push(...(value.importWarnings || []));
       if (value.truncatedLines) warnings.push(`${value.truncatedLines} 条超长行仅在原始文件完整保留`);

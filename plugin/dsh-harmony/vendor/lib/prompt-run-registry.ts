@@ -110,14 +110,24 @@ export function registerPromptRunCleanup(
   return () => { run.cleanups.delete(cleanup); };
 }
 
+export interface PromptRunFinishResult {
+  matched: boolean;
+  reason: PromptRunFinishReason;
+  runId?: string;
+  cleanupCount: number;
+  cleanupFailures: number;
+  errorMessages: string[];
+}
+
 export async function finishPromptRun(
   identity: PromptRunIdentity | undefined,
   reason: PromptRunFinishReason,
-): Promise<void> {
-  if (!identity) return;
+): Promise<PromptRunFinishResult> {
+  const empty: PromptRunFinishResult = { matched: false, reason, cleanupCount: 0, cleanupFailures: 0, errorMessages: [] };
+  if (!identity) return empty;
   const runs = getRuns();
   const record = runs.get(identity.sessionId);
-  if (!record || record.runId !== identity.runId) return;
+  if (!record || record.runId !== identity.runId) return empty;
 
   // Delete before cleanup so no late tool call can renew or acquire a lease
   // while the run is being torn down.
@@ -133,6 +143,14 @@ export async function finishPromptRun(
   if (failures.length > 0) {
     console.error(`[pi-web] ${failures.length} prompt-run cleanup operation(s) failed for ${identity.runId}.`);
   }
+  // Callers can now distinguish "run matched and every cleanup succeeded" from
+  // "no matching run" and "cleanup failed" instead of assuming success.
+  return {
+    matched: true, reason, runId: record.runId,
+    cleanupCount: record.cleanups.size,
+    cleanupFailures: failures.length,
+    errorMessages: failures.map(error => error instanceof Error ? error.message : String(error)).slice(0, 5),
+  };
 }
 
 export function resetPromptRunRegistryForTests(): void {

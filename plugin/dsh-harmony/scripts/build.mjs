@@ -35,10 +35,26 @@ generated += 'export const routes = [\n' + routeFiles.map((p, i) => {
 }).join(',\n') + '\n];\n';
 generated += `import { desktopRoutes } from './desktop'; routes.push(...desktopRoutes);\n`;
 fs.writeFileSync(src('routes.ts'), generated);
+// The session-log view must be the real dshE2E workbench, not a second copy.
+// The two plugins ship as a pair; a standalone build of this repository still
+// has the sibling source. Without it the pane degrades to an explicit notice
+// instead of silently reimplementing import/delete/rename/analysis.
+const pairedWorkbench = path.join(root, '..', 'dsh-e2e', 'src');
+const usePairedWorkbench = fs.existsSync(path.join(pairedWorkbench, 'LogWorkbench.jsx'))
+  && fs.existsSync(path.join(pairedWorkbench, 'client.css'));
+// One implementation of the search-history keyboard rules serves both log views;
+// a standalone build keeps a byte-identical contract through the local fallback.
+const pairedSearchMenu = path.join(pairedWorkbench, 'log-search-menu.mjs');
+const usePairedSearchMenu = fs.existsSync(pairedSearchMenu);
 const aliases = {
   '@earendil-works/pi-ai': src('pi-ai.ts'), '@earendil-works/pi-coding-agent': src('pi-sdk.ts'),
   'next/server': src('next-server.ts'),
+  '@dsh-e2e-workbench': usePairedWorkbench ? path.join(pairedWorkbench, 'LogWorkbench.jsx') : src('session-log-workbench-unpaired.tsx'),
+  '@dsh-e2e-workbench-css': usePairedWorkbench ? path.join(pairedWorkbench, 'client.css') : src('session-log-workbench-unpaired.css'),
+  '@dsh-log-search-menu': usePairedSearchMenu ? pairedSearchMenu : src('log-search-menu-unpaired.ts'),
 };
+if (!usePairedWorkbench) console.warn('dshE2E source not found next to this plugin: the session-log pane will show a pairing notice.');
+if (!usePairedSearchMenu) console.warn('dshE2E log-search-menu.mjs not found: the live pane uses the local fallback copy of the search-history rules.');
 const adapter = (browser = false) => ({ name: 'piora-platform-adapters', setup(builder) {
   builder.onResolve({ filter: /^@\// }, args => {
     if (args.path === '@/lib/file-access') return { path: src('file-access.ts') };

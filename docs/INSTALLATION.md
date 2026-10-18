@@ -1,6 +1,6 @@
 # 安装与更新
 
-当前配套插件：dshHarmony 0.5.0-rc.5 / dshE2E 0.4.0-rc.5。支持边界为 Windows x64、DSH 0.2.0-rc.2、真正的 Node.js 24 和 npm。下载的源码包仍需联网获取依赖，不包含用户配置、SDK 或驱动。详细流程见 [AI 安装指南](AI_INSTALLATION.md)，本机独立安装证据见 [可移植性记录](PORTABILITY.md)。
+当前配套插件：dshHarmony 0.5.0-rc.8 / dshVerify 0.5.0-rc.1（安装标识 dsh-e2e；本次为 RC 预发布，tag `v0.5.0-rc.8-e2e-0.5.0-rc.1`）。支持边界为 Windows x64、DSH 0.2.0-rc.2、真正的 Node.js 24 和 npm。下载的源码包仍需联网获取依赖，不包含用户配置、SDK 或驱动。详细流程见 [AI 安装指南](AI_INSTALLATION.md)，本机独立安装证据见 [可移植性记录](PORTABILITY.md)。
 
 ## 准备
 

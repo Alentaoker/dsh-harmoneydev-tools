@@ -8,6 +8,7 @@ import { createLogMatcher, createLogTimeRange, logHighlightParts } from "@/lib/h
 import { LogRingBuffer } from "@/lib/harmony/log-buffer";
 import { logApplicationPids, logBelongsToApplication } from "@/lib/harmony/log-application";
 import { AliIcon } from "../AliIcon";
+import { SearchHistoryMenu, historyKeyAction, isComposingKey, nextCursor, useLogSearchHistory } from "./harmony/LogSearchHistory";
 import styles from "./HarmonyPanel.module.css";
 
 type LogLevel = "debug" | "info" | "warn" | "error" | "fatal" | "unknown";
@@ -25,11 +26,14 @@ async function requestJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   return payload;
 }
 
-export function HarmonyLogViewer({ active, serial, online, copy }: {
+export function HarmonyLogViewer({ active, visible = true, serial, online, copy, onSavedToSession, onShowSessionLogs }: {
   active: boolean;
+  visible?: boolean;
   serial: string;
   online: boolean;
   copy: (zh: string, en: string) => string;
+  onSavedToSession?: (fileId: string) => void;
+  onShowSessionLogs?: () => void;
 }) {
   const [processes, setProcesses] = useState<DeviceProcess[]>([]);
   const [applications, setApplications] = useState<DeviceApplication[]>([]);
@@ -51,6 +55,20 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
   const [findRegex, setFindRegex] = useState(false);
   const [findCase, setFindCase] = useState(false);
   const [findIndex, setFindIndex] = useState(-1);
+  const [filterHistoryOpen, setFilterHistoryOpen] = useState(false);
+  const [filterCursor, setFilterCursor] = useState(0);
+  const [filterSelected, setFilterSelected] = useState(false);
+  const [findHistoryOpen, setFindHistoryOpen] = useState(false);
+  const [findCursor, setFindCursor] = useState(0);
+  const [findSelected, setFindSelected] = useState(false);
+  const filterHistory = useLogSearchHistory("filter", Boolean(active));
+  const findHistory = useLogSearchHistory("find", Boolean(active));
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  // Shared on disk with the other log view, so re-read it whenever the list is
+  // opened instead of trusting a snapshot from mount time.
+  const openFilterHistory = () => { setFindHistoryOpen(false); setFilterHistoryOpen(true); setFilterSelected(false); filterHistory.reload(); };
+  const openFindHistory = () => { setFilterHistoryOpen(false); setFindHistoryOpen(true); setFindSelected(false); findHistory.reload(); };
   const rootRef = useRef<HTMLElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [fromTime, setFromTime] = useState("");
@@ -161,6 +179,9 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     const stream = new EventSource(`/api/harmony/logs/events?serial=${encodeURIComponent(serial)}`);
     let changed = false;
     const flushDisplay = setInterval(() => {
+      // Capture keeps running while this pane is hidden; only the visible pane
+      // is allowed to refresh the list and re-run filtering.
+      if (!visibleRef.current) return;
       if (changed && !pausedRef.current) { changed = false; captureAnchor(); setEntries(buffered.snapshot()); }
     }, 250);
     stream.addEventListener("connected", () => { setLoading(false); setError(null); });
@@ -208,12 +229,19 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     && timeRange.matches(entry.timestamp) && matcher.matches(entry.raw)), [entries, bundle, applicationPids, appProcess, pid, matchingPids, level, tagMatcher, tid, domain, timeRange, matcher]);
   const deferredFind = useDeferredValue(findText);
   const findMatcher = useMemo(() => createLogMatcher(deferredFind, findRegex, findCase), [deferredFind, findRegex, findCase]);
-  const findRows = useMemo(() => deferredFind && !findMatcher.error ? visibleEntries.reduce<number[]>((rows, entry, index) => { if (findMatcher.matches(entry.raw)) rows.push(index); return rows; }, []) : [], [visibleEntries, deferredFind, findMatcher]);
+  const findRows = useMemo(() => visible && deferredFind && !findMatcher.error ? visibleEntries.reduce<number[]>((rows, entry, index) => { if (findMatcher.matches(entry.raw)) rows.push(index); return rows; }, []) : [], [visibleEntries, deferredFind, findMatcher, visible]);
   useEffect(() => { setFindIndex(-1); }, [deferredFind, findRegex, findCase, bundle, pid, level, tag, tid, domain, deferredQuery]);
-  useEffect(() => { if (findOpen) findRef.current?.focus(); }, [findOpen]);
+  useEffect(() => {
+    // Returning to the live pane refreshes it once with everything captured
+    // while it was hidden.
+    if (!visible || pausedRef.current) return;
+    setEntries(buffered.snapshot());
+  }, [visible]);
+  useEffect(() => { if (findOpen && visible) findRef.current?.focus(); }, [findOpen, visible]);
   useEffect(() => {
     if (!active) return;
     const handle = (event: KeyboardEvent) => {
+      if (!visibleRef.current) return;
       const scope = rootRef.current?.closest('[data-harmony-panel]') ?? rootRef.current;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && scope?.contains(event.target as Node)) {
         event.preventDefault(); event.stopPropagation(); setFindOpen(true); findRef.current?.focus();
@@ -227,6 +255,12 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     const next = findIndex < 0 ? (delta > 0 ? 0 : findRows.length - 1) : (findIndex + delta + findRows.length) % findRows.length;
     setFindIndex(next); following.current = false; setFollowTail(false); anchor.current = null;
     outputRef.current.scrollTop = findRows[next] * rowHeight; setScrollTop(outputRef.current.scrollTop);
+  };
+  /** Only an applied, valid filter becomes history. */
+  const commitFilterHistory = () => { if (query.trim() && !matcher.error) filterHistory.record(query, regex, caseSensitive); };
+  const applyFilterHistory = (entry: { query: string; regex: boolean; caseSensitive: boolean }) => {
+    setQuery(entry.query); setRegex(entry.regex); setCaseSensitive(entry.caseSensitive);
+    filterHistory.record(entry.query, entry.regex, entry.caseSensitive);
   };
   const highlight = (text: string) => findOpen && deferredFind ? logHighlightParts(text, deferredFind, findRegex, findCase).map((part, index) => part.match ? <mark key={index}>{part.text}</mark> : part.text) : text;
   visibleEntriesRef.current = visibleEntries;
@@ -295,10 +329,26 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
         <option value="">{copy("所有级别", "All levels")}</option>
         <option value="debug">Debug+</option><option value="info">Info+</option><option value="warn">Warn+</option><option value="error">Error+</option><option value="fatal">Fatal</option>
       </select>
+      <div className={styles.logSearchAnchor} data-history-anchor="filter" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setFilterHistoryOpen(false); }}>
       <label className={styles.logSearch}>
         <AliIcon name="search" size={13} />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy("筛选日志", "Filter logs")} aria-label={copy("筛选日志", "Filter logs")} />
+        <input value={query} onChange={(event) => { setFilterSelected(false); setQuery(event.target.value); }} placeholder={copy("筛选日志", "Filter logs")} aria-label={copy("筛选日志", "Filter logs")}
+          onFocus={() => openFilterHistory()}
+          onBlur={event => { if (event.relatedTarget && event.currentTarget.closest('[data-history-anchor]')?.contains(event.relatedTarget as Node)) return; window.setTimeout(() => { setFilterHistoryOpen(false); setFilterSelected(false); if (visibleRef.current) commitFilterHistory(); }, 120); }}
+          onKeyDown={(event) => {
+            if (isComposingKey(event)) return;
+            const action = historyKeyAction(event, { open: filterHistoryOpen, cursor: filterCursor, count: filterHistory.entries.length, selected: filterSelected });
+            if (action === "close") { event.preventDefault(); event.stopPropagation(); setFilterHistoryOpen(false); setFilterSelected(false); return; }
+            if (action === "up" || action === "down") { event.preventDefault(); setFilterSelected(true); setFilterCursor(current => nextCursor(current, action === "up" ? -1 : 1, filterHistory.entries.length)); return; }
+            if (action === "apply") { event.preventDefault(); const entry = filterHistory.entries[filterCursor]; if (entry) applyFilterHistory(entry); setFilterHistoryOpen(false); setFilterSelected(false); return; }
+            if (event.key === "Enter") { event.preventDefault(); commitFilterHistory(); setFilterHistoryOpen(false); setFilterSelected(false); }
+          }} />
       </label>
+      <button className={styles.iconButton} type="button" aria-expanded={filterHistoryOpen} title={copy("筛选历史", "Filter history")} aria-label={copy("筛选历史", "Filter history")}
+        onClick={() => { if (filterHistoryOpen) { setFilterHistoryOpen(false); setFilterSelected(false); } else openFilterHistory(); }}>↺</button>
+      {filterHistoryOpen ? <SearchHistoryMenu entries={filterHistory.entries} cursor={filterCursor} onCursor={setFilterCursor}
+        onPick={entry => { applyFilterHistory(entry); setFilterHistoryOpen(false); }} onRemove={filterHistory.remove} onClear={filterHistory.clear} onClose={() => setFilterHistoryOpen(false)} copy={copy} /> : null}
+      </div>
       <button className={styles.iconButton} type="button" onClick={() => setRegex(!regex)} aria-pressed={regex} title={copy("正则表达式", "Regular expression")}>.*</button>
       <button className={styles.iconButton} type="button" onClick={() => setCaseSensitive(!caseSensitive)} aria-pressed={caseSensitive} title={copy("筛选区分大小写", "Case-sensitive filters")}>Aa</button>
       <button className={styles.iconButton} type="button" onClick={() => { if (paused) { captureAnchor(); setEntries(buffered.snapshot()); } pausedRef.current = !paused; setPaused(!paused); }} aria-pressed={paused} aria-label={paused ? copy("继续显示日志", "Resume log display") : copy("暂停显示日志", "Pause log display")} title={paused ? copy("继续", "Resume") : copy("暂停", "Pause")}>
@@ -319,7 +369,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
     </div></details>
     <div className={styles.logActions}>
       {!findOpen ? <button type="button" onClick={() => setFindOpen(true)}>{copy("查找 · Ctrl+F", "Find · Ctrl+F")}</button> : null}
-      <button type="button" disabled={!logSession.sessionId || !logSession.onOpenLogs} onClick={() => logSession.onOpenLogs?.()}>{copy('日志工作台', 'Log workbench')}</button>
+      <button type="button" disabled={!logSession.sessionId} onClick={() => onShowSessionLogs?.()}>{copy('会话日志', 'Session logs')}</button>
       <button type="button" disabled={saving || !visibleEntries.length} onClick={() => void saveLogs(false)}>{copy('保存日志', 'Save logs')}</button>
       <button type="button" disabled={saving || !visibleEntries.length || !logSession.sessionId} onClick={() => void saveLogs(true)}>{saving ? copy('保存中…', 'Saving…') : copy('保存到当前会话', 'Save to session')}</button>
       <details className={styles.logMore}><summary>{copy("复制 / 清理", "Copy / clear")}</summary><div>
@@ -334,7 +384,25 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
       <button type="button" onClick={() => { setBundle(""); setPid(""); setLevel(""); setQuery(""); setRegex(false); setCaseSensitive(false); setTag(""); setTagRegex(false); setTid(""); setDomain(""); setFromTime(""); setToTime(""); }}>{copy("重置筛选", "Reset filters")}</button>
     </div>
     {findOpen ? <div className={styles.logFind}>
-      <input ref={findRef} value={findText} onChange={event => setFindText(event.target.value)} aria-label={copy("查找保留的筛选结果", "Find in retained filtered logs")} placeholder={copy("查找 · Ctrl+F（不改变筛选）", "Find · Ctrl+F (without filtering)")} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); jumpFind(event.shiftKey ? -1 : 1); } if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setFindOpen(false); } }} />
+      <div className={styles.logSearchAnchor} data-history-anchor="find" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setFindHistoryOpen(false); }}>
+      <input ref={findRef} value={findText} onChange={event => { setFindSelected(false); setFindText(event.target.value); }} aria-label={copy("查找保留的筛选结果", "Find in retained filtered logs")} placeholder={copy("查找 · Ctrl+F（不改变筛选）", "Find · Ctrl+F (without filtering)")}
+        onFocus={() => openFindHistory()}
+        onBlur={event => { if (event.relatedTarget && event.currentTarget.closest('[data-history-anchor]')?.contains(event.relatedTarget as Node)) return; window.setTimeout(() => { setFindHistoryOpen(false); setFindSelected(false); }, 120); }}
+        onKeyDown={event => {
+          if (isComposingKey(event)) return;
+          const action = historyKeyAction(event, { open: findHistoryOpen, cursor: findCursor, count: findHistory.entries.length, selected: findSelected });
+          if (action === "close") { event.preventDefault(); event.stopPropagation(); setFindHistoryOpen(false); setFindSelected(false); return; }
+          if (action === "up" || action === "down") { event.preventDefault(); setFindSelected(true); setFindCursor(current => nextCursor(current, action === "up" ? -1 : 1, findHistory.entries.length)); return; }
+          if (action === "apply") { event.preventDefault(); const entry = findHistory.entries[findCursor]; if (entry) { setFindText(entry.query); setFindRegex(entry.regex); setFindCase(entry.caseSensitive); findHistory.record(entry.query, entry.regex, entry.caseSensitive); } setFindHistoryOpen(false); setFindSelected(false); return; }
+          if (event.key === "Enter") { event.preventDefault(); jumpFind(event.shiftKey ? -1 : 1); if (!findMatcher.error && findText.trim()) findHistory.record(findText, findRegex, findCase); }
+          // Escape closes the history first, then the find bar; it never closes the workbench.
+          if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setFindOpen(false); }
+        }} />
+      <button type="button" aria-expanded={findHistoryOpen} onClick={() => { if (findHistoryOpen) { setFindHistoryOpen(false); setFindSelected(false); } else openFindHistory(); }} title={copy("查找历史", "Find history")}>{copy("历史", "History")}</button>
+      {findHistoryOpen ? <SearchHistoryMenu entries={findHistory.entries} cursor={findCursor} onCursor={setFindCursor}
+        onPick={entry => { setFindText(entry.query); setFindRegex(entry.regex); setFindCase(entry.caseSensitive); findHistory.record(entry.query, entry.regex, entry.caseSensitive); setFindHistoryOpen(false); findRef.current?.focus(); }}
+        onRemove={findHistory.remove} onClear={findHistory.clear} onClose={() => setFindHistoryOpen(false)} copy={copy} /> : null}
+      </div>
       <button type="button" aria-pressed={findCase} onClick={() => setFindCase(!findCase)} title={copy("查找区分大小写", "Case-sensitive find")}>Aa</button>
       <button type="button" aria-pressed={findRegex} onClick={() => setFindRegex(!findRegex)} title={copy("查找正则", "Find regex")}>.*</button>
       <span>{findIndex >= 0 ? Math.min(findIndex + 1, findRows.length) : 0}/{findRows.length} {copy("行", "rows")}</span>
@@ -362,7 +430,7 @@ export function HarmonyLogViewer({ active, serial, online, copy }: {
       </div>)}</div></div> : <div className={styles.logEmpty}>{online ? copy("没有匹配的日志", "No matching logs") : copy("请先连接设备", "Connect a device first")}</div>}
     </div>
     {selected ? <ResizableLogDetails copy={copy} tools={<><strong>{copy('日志详情', 'Log details')}</strong><button onClick={() => void copyText(selected.raw)}>{copy('复制完整行', 'Copy complete line')}</button><button onClick={analyzeSelected}>{copy('AI 分析此行', 'Analyze this line')}</button><button onClick={() => setSelected(undefined)}>{copy('关闭详情', 'Close details')}</button></>}><pre>{highlight(selected.raw)}</pre>{!entries.some(entry => entry.id === selected.id) && <small>{copy('此记录已离开当前缓冲，正在查看打开时的快照', 'This record left the buffer; showing its retained snapshot')}</small>}</ResizableLogDetails> : null}
-    {notice ? <div role="status" className={styles.inlineHint}>{notice}{savedFile?.sessionId === logSession.sessionId && <button onClick={() => logSession.onOpenLogs?.(savedFile.id)}>{copy('打开日志工作台', 'Open log workbench')}</button>}</div> : null}
+    {notice ? <div role="status" className={styles.inlineHint}>{notice}{savedFile?.sessionId === logSession.sessionId && <button onClick={() => { if (onSavedToSession) onSavedToSession(savedFile.id); else logSession.onOpenLogs?.(savedFile.id); }}>{copy('查看文件', 'View file')}</button>}</div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
     {appError ? <div className={styles.error} role="alert">{copy("应用 / 进程信息：", "App / process information: ")}{appError}</div> : null}
     {matcher.error && <div className={styles.error} role="alert">{copy("正则表达式无效：", "Invalid regular expression: ")}{matcher.error}</div>}

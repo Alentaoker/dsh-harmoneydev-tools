@@ -59,6 +59,8 @@ export class HybridHarmonyBackend implements HarmonyAutomationBackend {
 
   async prepareDevice(serial: string, signal?: AbortSignal): Promise<void> { await this.hdc.prepareDevice(serial, signal); }
 
+  async readScreenState(serial: string, signal?: AbortSignal) { return await this.hdc.readScreenState(serial, signal); }
+
   automationDiagnostics() {
     return { provider: "hypium", sessions: this.automationStatus() };
   }

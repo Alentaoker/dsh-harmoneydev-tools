@@ -2,6 +2,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { verifyNativeVideoResource } from '../plugin/dsh-harmony/scripts/verify-native-video-resource.mjs';
+import { verifyPairedSources } from './paired-sources.mjs';
 const root=resolve(process.argv[2] || '.');
 const profile=process.argv[3] && resolve(process.argv[3]);
 if(process.versions.node.split('.')[0]!=='24')throw Error('Node 24 is required.');
@@ -18,8 +19,19 @@ for(const name of ['dsh-harmony','dsh-e2e']){
     if(sorted(pkg[key])!==sorted(lock.packages[''][key]))throw Error(`${name}: ${key} differ from the lockfile.`);
   }
   for(const file of ['cordis.patch.yml','scripts/build.mjs'])await lstat(join(directory,file));
+  // The third-party runner must be gone from both the manifest and the resolved
+  // lock graph; a depth-1 string removal alone is not enough.
+  for(const key of ['dependencies','devDependencies','optionalDependencies','peerDependencies']){
+    if(Object.keys(pkg[key]||{}).includes('e2e'))throw Error(`${name}: manifest still depends on the removed e2e runner.`);
+    if(Object.keys(lock.packages[''][key]||{}).includes('e2e'))throw Error(`${name}: lockfile root still depends on the removed e2e runner.`);
+  }
+  for(const path of Object.keys(lock.packages)) if(path==='node_modules/e2e'||path.endsWith('/node_modules/e2e'))throw Error(`${name}: lockfile still resolves the removed e2e runner at ${path}.`);
   packages.push({name:pkg.name,version:pkg.version});
 }
+// dshHarmony's client build resolves the paired dshE2E log view, the shared
+// search-history menu and the shared search rules from ../dsh-e2e/src. A source
+// package that ships only the two plugin entry points would fail to build.
+const pairedSourceCount = await verifyPairedSources(root);
 if(profile){
   const pkg=JSON.parse(await readFile(join(profile,'package.json'),'utf8'));
   if(!pkg.dsh?.profile||!Array.isArray(pkg.dsh.profile.bundles))throw Error('Target is not an initialized DSH profile.');
@@ -39,4 +51,4 @@ if(manifestStat){
   }
 }
 const native=await verifyNativeVideoResource(join(root,'plugin/dsh-harmony/resources/native-video'));
-console.log(JSON.stringify({preflight:'passed',node:process.versions.node,platform:process.platform,architecture:process.arch,packages,releaseChecksums:!!manifestStat,nativeVideo:native.present?'verified ARM64 phone resource':'missing: screenshot preview is available; live H.264 needs the private resource',mutates:false},null,2));
+console.log(JSON.stringify({preflight:'passed',node:process.versions.node,platform:process.platform,architecture:process.arch,packages,pairedSources:pairedSourceCount,releaseChecksums:!!manifestStat,nativeVideo:native.present?'verified ARM64 phone resource':'missing: screenshot preview is available; live H.264 needs the private resource',mutates:false},null,2));

@@ -102,3 +102,26 @@
 .de2e .reading-focus .library-preview{display:flex;padding:0;height:100%}
 @container (max-width:760px){.de2e .library-split{display:block;overflow:hidden}.de2e .library-files{height:100%;padding:0}.de2e .library-preview{display:none;height:100%;padding:0}.de2e .library-preview.open{display:flex}.de2e .library-directory-bar{max-height:150px}.de2e .library-file{min-height:56px}.de2e .library-document-heading{gap:4px}.de2e .library-document-actions{flex-wrap:wrap}.de2e .library-heading>.muted{font-size:11px}}
 @container (max-width:420px){.de2e .library-heading{gap:3px}.de2e .library-document-name{flex-basis:100%}.de2e .log-page-tools .export-filtered{margin-left:0}.de2e .log-primary-tools>.offline-app-picker{flex-basis:100%;max-width:none}.de2e .log-secondary-tools{gap:3px}.de2e .log-secondary-tools>input{max-width:none}}
+
+/* Shared search history for the log views (populated by dshHarmony's store). */
+.de2e .log-search-history{margin:6px 0;padding:8px;border:1px solid var(--border,#39414d);border-radius:8px;background:var(--surface-raised,#1d242e);max-height:240px;overflow:auto}
+.de2e .log-search-history .row{gap:8px;align-items:center}
+.de2e .log-search-history ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.de2e .log-search-history li{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}
+.de2e .log-search-history li:hover{background:var(--surface-hover,#2b3441)}
+.de2e .log-search-history li[aria-selected="true"]{background:#334e70;color:#fff}
+.de2e .log-search-history li>span{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.de2e .log-search-history li small{white-space:nowrap}
+.de2e .log-search-history li button{padding:0 6px;line-height:1.2}
+.de2e .log-search-anchor{position:relative;display:flex;align-items:center;gap:4px;flex:1 1 180px;min-width:120px}
+.de2e .log-search-anchor>input{flex:1;min-width:0;width:0}
+.de2e .log-search-anchor>.log-search-history{position:absolute;z-index:80;top:calc(100% + 4px);left:0;right:0;margin:0;max-height:min(260px,40vh);box-shadow:0 10px 30px #0008}
+.de2e .session-document-pane{display:flex;flex-direction:column;min-height:0;flex:1;overflow:hidden}
+.de2e .session-search-pane{flex:1;min-height:0;overflow:auto;padding:12px}
+.de2e .session-document-pane[hidden],.de2e .session-search-pane[hidden]{display:none}
+.de2e .session-log-search h3{margin:0 0 6px;font-size:15px}
+.de2e .session-search-results{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.de2e .session-search-results article{border:1px solid var(--border,#39414d);border-radius:6px;padding:8px;background:var(--surface-raised,#171e28)}
+.de2e .session-search-results article>button{max-width:100%;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-align:left;color:#a9caff}
+.de2e .session-search-results pre{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 Consolas,monospace}
+.de2e .log-table tr.source-focus{background:#355d8b55;outline:2px solid #8faff8;outline-offset:-2px}

@@ -442,6 +442,8 @@ export interface BackendSnapshot {
 
 export interface HarmonyAutomationBackend {
   prepareDevice?(serial: string, signal?: AbortSignal): Promise<void>;
+  /** Read-only lock/awake state. Never sends a power key or a swipe. */
+  readScreenState?(serial: string, signal?: AbortSignal): Promise<import("./observation/screen-state").HarmonyScreenState>;
   readonly kind: string;
   readonly hdcPath?: string;
   listDevices(signal?: AbortSignal): Promise<BackendDevice[]>;

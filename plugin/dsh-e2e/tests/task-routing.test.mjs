@@ -1,44 +1,87 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import sharp from 'sharp';
 import { apply } from '../src/agent.mjs';
-import { createService, validateRun } from '../src/service.mjs';
-import { parseDecision } from '../src/executor.mjs';
+import { validateToolCall } from '../src/tool-contract.mjs';
 
-test('app-name aliases search consistently; operation-specific mistakes fail without starting a run',async()=>{
- let tool,query,dispatches=0;
- apply({effect:fn=>fn(),tools:{register:t=>{tool=t;}},systemPrompt:{section(){}},dshE2E:{resolveApp:async q=>{query=q;return{query:q};},run:async()=>{dispatches++;}}});
- const exec={agent:{id:'unit',options:{}},signal:new AbortController().signal};
- for(const key of ['name','appName','query']){await tool.execute({operation:'resolve_app',[key]:'小艺'},exec);assert.equal(query,'小艺');}
- await assert.rejects(tool.execute({operation:'resolve_app',query:'小艺',name:'Work'},exec),/冲突/);
- await assert.rejects(tool.execute({operation:'run',goal:'测试',expectation:'结果',milliseconds:25000},exec),/milliseconds/);
- assert.equal(dispatches,0);
- assert.throws(()=>validateRun({goal:'当前页',runMode:'verify_current',appBundle:'mock.app',expectation:'可见'}),/只验当前页/);
- assert.throws(()=>validateRun({goal:'当前页',runMode:'verify_current',steps:[{action:'home'}]}),/只验当前页/);
- assert.throws(()=>parseDecision('{"action":"wait","milliseconds":1000}'),/waitMs/);
+function toolFixture(overrides = {}) {
+  let tool, prompt = '';
+  const calls = [];
+  const validation = {
+    async saveTask(sessionId, input) { calls.push(['saveTask', sessionId, input]); return { taskId: 'task-aaaaaaaa', revision: 1, handoffStatus: 'awaiting-install' }; },
+    async beginValidation(sessionId, input) { calls.push(['beginValidation', sessionId, input]); return { attemptId: 'attempt-aaaaaaaa', contextRevision: 'task-aaaaaaaa@1' }; },
+    async recordCheckpoint(sessionId, input) { calls.push(['recordCheckpoint', sessionId, input]); return { checkpointSummary: { total: 1, pass: 1 } }; },
+    async finishValidation(sessionId, input) { calls.push(['finishValidation', sessionId, input]); return { semantic: 'passed' }; },
+    async readValidation() { return { tasks: [] }; },
+    async cancelValidation() { return { execution: 'cancelled' }; },
+    async startCapture() { return { captureId: 'cap-1' }; },
+    async stopCapture() { return { captureId: 'cap-1', status: 'captured' }; },
+    ...overrides,
+  };
+  const ctx = {
+    effect(fn) { fn(); },
+    tools: { register(value) { tool = value; } },
+    systemPrompt: { section(value) { prompt = value.text; } },
+    dshE2E: {
+      validation,
+      async resolveApp(query) { return { query, resolved: 'test.app' }; },
+      async listPage() { return { runs: [] }; },
+      async getLogs(id) { return { id, entries: [] }; },
+      async report() { return { run: { status: 'passed' }, view: {} }; },
+    },
+  };
+  apply(ctx);
+  return { tool, calls, prompt: () => prompt, exec: { agent: { id: 'unit' }, callId: 'call-1', signal: new AbortController().signal } };
+}
+
+test('应用名称别名一致；无操作执行器副作用', async () => {
+  const f = toolFixture();
+  for (const key of ['name', 'appName', 'query']) assert.equal((await f.tool.execute({ operation: 'resolve_app', [key]: '小艺' }, f.exec)).query, '小艺');
+  await assert.rejects(f.tool.execute({ operation: 'resolve_app', query: '小艺', name: 'Work' }, f.exec), /冲突/);
+  assert.equal(f.calls.length, 0);
 });
 
-test('current-page visual verification uses pixels, records evidence and never runs the action goal',{timeout:60000},async()=>{
- const root=await mkdtemp(join(tmpdir(),'dsh-verify-'));
- const data=await sharp({create:{width:200,height:100,channels:3,background:'#f00'}}).png().toBuffer();
- let actions=0,calls=0,released=0,images=0,geometryCalls=0;
- const m={listDevices:async()=>[{serial:'TEST',state:'online',capabilities:{uiTree:true,tap:true}}],acquireLease:async()=>({token:'test-lease'}),renewLease(){},releaseLease(){released++;return true;},prepareDevice:async()=>{},snapshot:async o=>({generation:1,revision:1,quality:{treeStatus:'valid',scopeComplete:true},nodes:[{ref:'r',type:'Image',id:'result',visible:true,bounds:{left:0,top:0,right:200,bottom:100}}],...(o.includeScreenshot?{screenshot:{data}}:{})}),getDisplayGeometry:async()=>{geometryCalls++;return{nativeWidth:200,nativeHeight:100};},tapRef:async()=>{actions++;},inputText:async()=>{actions++;}};
- const ctx={dshHarmony:{automation:{getManager:()=>m}},attachments:{saveImage:async o=>{images++;assert.ok(o.data.length);return{attachmentId:'visual-input',mediaType:'image/png'};}},llm:{resolveModelInfo:async()=>({inputModalities:['text','image']}),async *stream(o){calls++;assert.ok(o.system.includes('验收员'));assert.equal(o.messages[0].content[1].type,'image');yield{type:'text-delta',text:'{"action":"assert","passed":true,"summary":"真实截图是红色"}'};}}};
- const service=createService(ctx,root);
- try {
-  const result=await service.run({goal:'绝不能再次点击发送',expectation:'截图为红色',runMode:'verify_current',verificationMode:'visual',collectLogs:false},'unit',{provider:'mock',model:'vision'},AbortSignal.timeout(50000));
-  assert.equal(result.status,'passed',result.error);assert.equal(actions,0);assert.equal(calls,1);assert.equal(images,1);assert.equal(released,1);assert.equal(result.runMode,'verify_current');
-  const record=await service.get(result.id);assert.ok(await readFile(join(record.directory,'verification-1.png')));assert.equal(result.verificationEvidence.length,1);assert.ok(result.checks.reportWritten);
-  const cold=await service.report(result.id);assert.ok(cold.view.screenshots.some(s=>s.file==='verification-1.png'));
- } finally {await service.dispose();await rm(root,{recursive:true,force:true});}
+test('保存任务与开始验证带会话与 callId，返回操作说明', async () => {
+  const f = toolFixture();
+  const saved = await f.tool.execute({ operation: 'save_task', title: '崩溃', kind: 'bug', requirement: '启动崩溃', checkpoints: [{ id: 'cp1', description: '首页可见' }] }, f.exec);
+  assert.equal(saved.taskId, 'task-aaaaaaaa');
+  assert.match(saved.instruction, /等待用户确认/);
+  assert.equal(f.calls[0][1], 'unit');
+  const began = await f.tool.execute({ operation: 'begin_validation', taskId: 'task-aaaaaaaa', mode: 'human', serial: 'SN1', verifyExisting: true }, f.exec);
+  assert.equal(began.attemptId, 'attempt-aaaaaaaa');
+  assert.match(began.instruction, /人工模式只允许只读观察/);
+  assert.equal(f.calls[1][2].callId, 'call-1');
 });
 
-test('text-only model fails visual admission before acquiring control, with a persisted failure record',async()=>{
- const root=await mkdtemp(join(tmpdir(),'dsh-no-vision-'));let acquisitions=0;
- const service=createService({dshHarmony:{automation:{getManager:()=>({listDevices:async()=>[{serial:'TEST',state:'online',capabilities:{uiTree:true,tap:true}}],acquireLease:async()=>{acquisitions++;}})}},llm:{resolveModelInfo:async()=>({inputModalities:['text']})}},root);
- try {const result=await service.run({goal:'看图',expectation:'是猫',verificationMode:'visual',collectLogs:false},'unit',{provider:'mock',model:'text'},AbortSignal.timeout(5000));assert.equal(result.status,'failed');assert.equal(result.errorCode,'VISION_UNAVAILABLE');assert.equal(acquisitions,0);assert.ok((await service.get(result.id)).error.includes('图像'));}
- finally {await service.dispose();await rm(root,{recursive:true,force:true});}
+test('记录检查点与结束验证的状态语义透传，不把工具成功说成通过', async () => {
+  const f = toolFixture();
+  await f.tool.execute({ operation: 'record_checkpoint', taskId: 'task-aaaaaaaa', attemptId: 'attempt-aaaaaaaa', checkpointId: 'cp1', result: 'pass', source: 'ai' }, f.exec);
+  assert.equal(f.calls[0][2].callId, 'call-1');
+  const finished = await f.tool.execute({ operation: 'finish_validation', taskId: 'task-aaaaaaaa', attemptId: 'attempt-aaaaaaaa' }, f.exec);
+  assert.equal(finished.semantic, 'passed');
+  assert.match(finished.instruction, /证据不全时不能宣告通过/);
+});
+
+test('旧执行操作给出迁移错误，且不调用任何验证方法', async () => {
+  const f = toolFixture();
+  for (const [args, pattern] of [
+    [{ operation: 'run', goal: '返回桌面' }, /内层执行器已移除/],
+    [{ operation: 'replay', id: 'x' }, /动作回放已移除/],
+    [{ operation: 'retry', id: 'x' }, /复测执行器已移除/],
+    [{ operation: 'cancel', id: 'x' }, /运行取消已移除/],
+    [{ operation: 'archive', id: 'x', archived: true }, /归档已退役/],
+  ]) {
+    await assert.rejects(f.tool.execute(args, f.exec), pattern);
+  }
+  assert.equal(f.calls.length, 0);
+  assert.throws(() => validateToolCall({ operation: 'run', goal: 'x', milliseconds: 1 }), /不接受字段/);
+});
+
+test('提示词不再强制 e2e_phone.run 或内层独立验收', () => {
+  const f = toolFixture();
+  const prompt = f.prompt();
+  assert.equal(/必须先用 e2e_phone\.run/.test(prompt), false);
+  assert.equal(/E2E_REQUIRED/.test(prompt), false);
+  assert.match(prompt, /不再有内层 AI 循环|不再有内层AI循环/);
+  assert.match(prompt, /人工模式|mode:human/);
+  assert.match(prompt, /旧格式未记录/);
 });

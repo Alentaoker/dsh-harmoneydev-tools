@@ -7,7 +7,10 @@ import { build } from 'esbuild';
 // This is lifecycle verification, not evidence of real WebCodecs performance.
 const built = await build({
   entryPoints: ['vendor/hooks/useHarmonyLiveFrame.ts'], bundle: true, format: 'esm', platform: 'browser', write: false,
-  alias: { '@/lib/harmony/request-error': path.resolve('vendor/lib/harmony/request-error.ts'), '@/lib/harmony/media/browser-video-packets': path.resolve('vendor/lib/harmony/media/browser-video-packets.ts') },
+  alias: { '@/lib/harmony/request-error': path.resolve('vendor/lib/harmony/request-error.ts'), '@/lib/harmony/media/browser-video-packets': path.resolve('vendor/lib/harmony/media/browser-video-packets.ts'),
+    '@/lib/harmony/observation/screen-state': path.resolve('vendor/lib/harmony/observation/screen-state.ts'),
+    '@/lib/harmony/observation/live-view-phase': path.resolve('vendor/lib/harmony/observation/live-view-phase.ts'),
+    '@/lib/harmony/media/video-backlog': path.resolve('vendor/lib/harmony/media/video-backlog.ts') },
   plugins: [{ name: 'react-lifecycle-seam', setup(builder) {
     builder.onResolve({ filter: /^react$/ }, () => ({ path: 'react', namespace: 'seam' }));
     builder.onLoad({ filter: /.*/, namespace: 'seam' }, () => ({ contents: `
@@ -122,6 +125,24 @@ function packet(type, payload) {
   return result;
 }
 
+function streamConfig(changeDriven = 1) {
+  const config = new Uint8Array(24);
+  const view = new DataView(config.buffer);
+  view.setUint32(1, 100, false); view.setUint32(5, 200, false); view.setUint32(9, 30, false);
+  view.setUint16(13, 4, false); config.set([0x67, 0x42, 0xe0, 0x1f], 15);
+  view.setUint16(19, 2, false); config.set([0x68, 0], 21); config[23] = changeDriven;
+  return config;
+}
+
+/** One H.264 access unit: 1 flag byte, 8 timestamp bytes, then the payload. */
+function framePacket(key, extraBytes = 0) {
+  const payload = new Uint8Array(9 + extraBytes);
+  payload[0] = key ? 1 : 0;
+  payload[8] = 1;
+  if (extraBytes) payload[13] = 0x65;
+  return packet(3, payload);
+}
+
 test('video uses an opaque cached canvas, five-second static geometry probes, and releases decoder resources when hidden', async () => {
   let closedFrames = 0;
   let closedDecoders = 0;
@@ -136,7 +157,9 @@ test('video uses an opaque cached canvas, five-second static geometry probes, an
   const picture = new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0x65, 1]);
   const h = harness(false, async url => url.startsWith('/api/harmony/geometry?')
     ? { ok: true, json: async () => ({ geometry: { frameWidth: 100, frameHeight: 200, geometryId: 'test-geometry' } }) }
-    : { ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(packet(2, config)); controller.enqueue(packet(3, picture)); }, cancel() { cancelledStreams += 1; } }) });
+    : url.startsWith('/api/harmony/screen-state?')
+      ? { ok: true, json: async () => ({ awake: true, locked: false }) }
+      : { ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(packet(2, config)); controller.enqueue(packet(3, picture)); }, cancel() { cancelledStreams += 1; } }) });
   class Decoder {
     static async isConfigSupported(config) { return { supported: true, config }; }
     constructor(callbacks) { this.callbacks = callbacks; this.state = 'unconfigured'; this.decodeQueueSize = 0; }
@@ -172,6 +195,7 @@ test('external video contention stays identifiable with low-rate preview and ret
       return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')),{once:true}));
     }
     if (url.startsWith('/api/harmony/geometry?')) return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'preview'}})};
+    if (url.startsWith('/api/harmony/screen-state?')) return {ok:true,json:async()=>({awake:true,locked:false})};
     frameRequests += 1;
     return {ok:true,headers:new Headers({'X-Harmony-Generation':'1','X-Harmony-Revision':'1'}),blob:async()=>new Blob()};
   });
@@ -189,4 +213,125 @@ test('external video contention stays identifiable with low-rate preview and ret
     const probing=h.flush();assert.equal(probing.videoRecovery,undefined);assert.equal(probing.videoBlocked,false);
     assert.doesNotMatch(probing.fallbackReason,/51811/,'a stale PID is cleared during the next probe');
   } finally {await h.dispose();}
+});
+
+test('a locked phone waits at a two-second cadence and reconnects as soon as it is unlocked', async () => {
+  let locked = true;
+  let videoRequests = 0, frameRequests = 0, screenRequests = 0;
+  const h = harness(false, async (url, { signal }) => {
+    if (url.startsWith('/api/harmony/video?')) {
+      videoRequests += 1;
+      if (videoRequests === 1) return { ok: false, status: 409, json: async () => ({ error: { code: 'SCREEN_LOCKED', message: 'locked' } }) };
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true }));
+    }
+    if (url.startsWith('/api/harmony/screen-state?')) { screenRequests += 1; return { ok: true, json: async () => ({ awake: true, locked }) }; }
+    if (url.startsWith('/api/harmony/geometry?')) return { ok: true, json: async () => ({ geometry: { frameWidth: 100, frameHeight: 200, geometryId: 'preview' } }) };
+    frameRequests += 1;
+    return { ok: true, headers: new Headers({ 'X-Harmony-Generation': '1', 'X-Harmony-Revision': '1' }), blob: async () => new Blob() };
+  });
+  h.options.chinese = true;
+  h.options.canvasRef.current = { width: 100, height: 200, getContext: () => ({ drawImage() {}, clearRect() {} }) };
+  globalThis.createImageBitmap = async () => ({ width: 100, height: 200, close() {} });
+  try {
+    h.flush(); await settle();
+    const waiting = h.flush();
+    assert.equal(videoRequests, 1);
+    assert.equal(waiting.phase, 'waiting-unlock', 'a locked screen is a waiting phase, not a stream failure');
+    assert.deepEqual(waiting.screen, { awake: true, locked: true });
+    assert.equal(waiting.mode, 'frames');
+    assert.ok(screenRequests >= 1, 'the lock state is read passively instead of guessing');
+    assert.equal(frameRequests, 1, 'the last frame stays visible at a low cadence');
+    assert.ok([...h.timers.values()].some(timer => timer.delay === 2000), 'waiting uses about a two-second cadence, not 120ms');
+
+    // Unlock the phone. The next probe notices and the stream is retried without
+    // waiting out any exponential backoff; at most one more preview tick passes.
+    locked = false;
+    for (let round = 0; round < 3 && videoRequests < 2; round += 1) {
+      for (const [id, timer] of [...h.timers]) { if (timer.delay === 2000) { h.timers.delete(id); timer.fn(); } }
+      await settle();
+      h.flush(); await settle();
+    }
+    assert.equal(videoRequests, 2, 'a confirmed unlock reconnects immediately');
+    const resumed = h.flush();
+    assert.notEqual(resumed.phase, 'waiting-unlock');
+  } finally { await h.dispose(); }
+});
+
+test('a backlog stall is bounded: the preview asks for a fresh keyframe instead of freezing', async () => {
+  let videoRequests = 0;
+  const h = harness(false, async url => {
+    if (url.startsWith('/api/harmony/geometry?')) return { ok: true, json: async () => ({ geometry: { frameWidth: 100, frameHeight: 200, geometryId: 'g' } }) };
+    if (url.startsWith('/api/harmony/screen-state?')) return { ok: true, json: async () => ({ awake: true, locked: false }) };
+    videoRequests += 1;
+    return { ok: true, body: new ReadableStream({ start(controller) {
+      controller.enqueue(packet(2, streamConfig()));
+      // One oversized IDR plus dependent frames, and a decoder that never
+      // releases anything: the preview budget is exceeded immediately.
+      controller.enqueue(framePacket(true, 1_600_000));
+      controller.enqueue(framePacket(false));
+      controller.enqueue(framePacket(false));
+    } }) };
+  });
+  class StuckDecoder {
+    static async isConfigSupported(config) { return { supported: true, config }; }
+    constructor(callbacks) { this.callbacks = callbacks; this.state = 'unconfigured'; this.decodeQueueSize = 0; }
+    configure() { this.state = 'configured'; }
+    decode() { this.decodeQueueSize += 1; }
+    close() { this.state = 'closed'; }
+  }
+  Object.assign(globalThis, { VideoDecoder: StuckDecoder, EncodedVideoChunk: class { constructor(options) { Object.assign(this, options); } } });
+  globalThis.window.VideoDecoder = StuckDecoder;
+  h.options.canvasRef.current = { width: 100, height: 200, getContext: () => ({ drawImage() {}, clearRect() {} }) };
+  try {
+    h.flush(); await settle();
+    const stalled = h.flush();
+    assert.ok(stalled.metrics.droppedFrames >= 1, 'dependent frames are skipped once the budget is exceeded');
+    assert.ok([...h.timers.values()].some(timer => timer.delay === 2000), 'the keyframe wait is bounded by a timer');
+
+    // The screen is now static, so that source will never send an IDR. The
+    // bound must produce a new video request instead of a frozen picture.
+    for (let round = 0; round < 4 && videoRequests < 2; round += 1) {
+      for (const [id, timer] of [...h.timers]) { if (timer.delay === 2000 || timer.delay === 250) { h.timers.delete(id); timer.fn(); } }
+      await settle(); h.flush(); await settle();
+    }
+    assert.equal(videoRequests, 2, 'a stalled backlog reconnects for a fresh keyframe');
+    assert.ok(h.flush().metrics.resyncs >= 1, 'the forced resync is reported, not hidden');
+  } finally { await h.dispose(); }
+});
+
+test('an unlock ends a compatible-preview window instead of waiting out its full budget', async () => {
+  let locked = false, videoRequests = 0, frameRequests = 0;
+  const h = harness(false, async (url, { signal }) => {
+    if (url.startsWith('/api/harmony/video?')) {
+      videoRequests += 1;
+      if (videoRequests <= 3) return { ok: false, status: 500, json: async () => ({ error: { code: 'COMMAND_FAILED', message: 'stream failed' } }) };
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true }));
+    }
+    if (url.startsWith('/api/harmony/screen-state?')) return { ok: true, json: async () => ({ awake: true, locked }) };
+    if (url.startsWith('/api/harmony/geometry?')) return { ok: true, json: async () => ({ geometry: { frameWidth: 100, frameHeight: 200, geometryId: 'preview' } }) };
+    frameRequests += 1;
+    return { ok: true, headers: new Headers({ 'X-Harmony-Generation': '1', 'X-Harmony-Revision': '1' }), blob: async () => new Blob() };
+  });
+  h.options.chinese = true;
+  h.options.canvasRef.current = { width: 100, height: 200, getContext: () => ({ drawImage() {}, clearRect() {} }) };
+  globalThis.createImageBitmap = async () => ({ width: 100, height: 200, close() {} });
+  try {
+    // Three plain failures land on the compatible preview, which previously had
+    // no exit condition other than its own 30～120 s budget.
+    const fire = maxDelay => { let fired = 0; for (const [id, timer] of [...h.timers]) { if (timer.delay <= maxDelay) { h.timers.delete(id); timer.fn(); fired += 1; } } return fired; };
+    for (let round = 0; round < 12 && videoRequests < 3; round += 1) { fire(1200); await settle(); h.flush(); await settle(); }
+    assert.equal(videoRequests, 3);
+    assert.equal(h.flush().mode, 'frames');
+    const framesBefore = frameRequests;
+
+    // The phone locks, then the person unlocks it. The probe notices both.
+    locked = true;
+    for (let round = 0; round < 4; round += 1) { fire(4000); await settle(); h.flush(); await settle(); }
+    assert.equal(h.flush().phase, 'waiting-unlock', 'a lock during the compatible window is its own phase');
+
+    locked = false;
+    for (let round = 0; round < 6 && videoRequests < 4; round += 1) { fire(4000); await settle(); h.flush(); await settle(); }
+    assert.equal(videoRequests, 4, 'a confirmed unlock retries the live channel inside the same window');
+    assert.ok(frameRequests > framesBefore, 'the compatible preview kept the screen usable while waiting');
+  } finally { await h.dispose(); }
 });

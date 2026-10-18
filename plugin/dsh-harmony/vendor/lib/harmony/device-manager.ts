@@ -188,6 +188,7 @@ export class HarmonyDeviceManager {
   private readonly liveFrameControllers = new Map<string, AbortController>();
   private readonly logStreamControllers = new Map<AbortController, string>();
   private readonly liveFramePromises = new Map<string, Promise<HarmonySnapshot>>();
+  private readonly screenStatePromises = new Map<string, Promise<{ serial: string; generation: number; awake: boolean; locked: boolean; observedAt: string }>>();
   private readonly videoConnections = new Map<string, Set<HarmonyVideoConnection>>();
   private readonly videoConnectionCurrent = new WeakMap<HarmonyVideoConnection, () => boolean>();
   private readonly videoConnectionFrames = new WeakMap<HarmonyVideoConnection, { capturedAt: number; generation: number; width?: number; height?: number }>();
@@ -1185,6 +1186,27 @@ export class HarmonyDeviceManager {
       Math.max(this.cleanupTimeoutMs, PASSIVE_FRAME_CLEANUP_TIMEOUT_MS)) !== "complete") {
       throw new HarmonyError("DEVICE_BUSY", "A previous frame capture has not settled", { details: { dispatchState: "not-sent", cleanup: "uncertain" } });
     }
+  }
+
+  /**
+   * Passive lock/awake state for the device page. Read-only: no lease, no power
+   * key, no swipe. Overlapping probes for one serial share a single command so a
+   * 2 s browser poll cannot pile up hidumper dispatches.
+   */
+  async screenState(options: { serial: string; signal?: AbortSignal }): Promise<{ serial: string; generation: number; awake: boolean; locked: boolean; observedAt: string }> {
+    validateSerial(options.serial);
+    const inFlight = this.screenStatePromises.get(options.serial);
+    if (inFlight) return await inFlight;
+    const promise = (async () => {
+      const device = await this.onlineDevice(options.serial, options.signal);
+      const backend = this.requireBackend();
+      if (!backend.readScreenState) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "This provider cannot read the phone lock state");
+      const state = await backend.readScreenState(options.serial, options.signal);
+      if (state.locked === undefined) throw new HarmonyError("OBSERVATION_UNAVAILABLE", "Cannot read the phone lock state");
+      return { serial: options.serial, generation: device.generation, awake: state.awake, locked: state.locked, observedAt: iso(this.now()) };
+    })().finally(() => { if (this.screenStatePromises.get(options.serial) === promise) this.screenStatePromises.delete(options.serial); });
+    this.screenStatePromises.set(options.serial, promise);
+    return await promise;
   }
 
   async captureLiveFrame(options: { serial: string; signal?: AbortSignal }): Promise<HarmonySnapshot> {

@@ -55,6 +55,20 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
   catch (error) { await output.cancel().catch(() => undefined); await handle.close(); await rm(path, { force: true }); await rmdir(directory); await connection.close(); throw error; }
   let stopping = false, failure: unknown, frames = 0, firstTimestamp: number | undefined, config: ReturnType<typeof configuration> | undefined;
   let recordingClock: number | undefined, lastRelative = -0.000001;
+  // Change-driven encoders do not emit duplicate frames on a static screen.
+  // Keep one sample until its successor (or stop) establishes its real duration.
+  let sample: { data: Buffer; key: boolean; timestamp: number; config: ReturnType<typeof configuration> } | undefined;
+  let written = 0;
+  const flushSample = async (end: number) => {
+    if (!sample) return;
+    const current = sample;
+    const duration = Math.max(0.000001, end - current.timestamp);
+    await source.add(new EncodedPacket(current.data, current.key ? "key" : "delta", current.timestamp, duration), written ? undefined : {
+      decoderConfig: { codec: current.config.codec, codedWidth: current.config.width, codedHeight: current.config.height, description: current.config.description },
+    });
+    sample = undefined;
+    written++;
+  };
   let accepted = false, ended = false, failureReported = false;
   const reportFailure = () => {
     if (!accepted || !ended || stopping || !failure || failureReported || !onFailure) return;
@@ -115,7 +129,8 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
             // preroll, not minutes recorded before this subscription began.
             const relative = Math.max(lastRelative + 0.000001, Math.min(sourceRelative, elapsed));
             lastRelative = relative;
-            await source.add(new EncodedPacket(lengthPrefixed(payload.subarray(9)), key ? "key" : "delta", relative, 1 / config.fps), frames ? undefined : { decoderConfig: { codec: config.codec, codedWidth: config.width, codedHeight: config.height, description: config.description } });
+            await flushSample(relative);
+            sample = { data: lengthPrefixed(payload.subarray(9)), key, timestamp: relative, config };
             frames++; resolveReady();
           }
         }
@@ -144,10 +159,12 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
   finally { clearTimeout(startup); signal?.removeEventListener("abort", abort); }
   accepted = true; reportFailure();
   const stop = (destination: string) => completion ??= (async () => {
+    const stoppedAt = performance.now();
     stopping = true;
     try {
       await close(); await pump;
       if (failure) throw failure;
+      await flushSample(recordingClock === undefined ? lastRelative + 1 / (config?.fps || 30) : Math.max(lastRelative + 0.000001, (stoppedAt - recordingClock) / 1000));
       source.close(); await output.finalize(); await handle.close();
       await copyFile(path, destination, constants.COPYFILE_EXCL);
       return (await stat(destination)).size;
