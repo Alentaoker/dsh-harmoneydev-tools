@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { LogViewer } from './LogViewer.jsx';
 import { LogTrash } from './LogTrash.jsx';
 import { SessionLogSearch } from './SessionLogSearch.jsx';
+import { LogSessionManager } from './LogSessionManager.jsx';
 import { libraryRequest as request, libraryUrl, importLogFile, logAnalysisPrompt, selectionAnalysisPrompt } from './log-client.mjs';
 
 const workbenchCache = new Map();
@@ -14,7 +15,8 @@ export function LogWorkbench({ visible, sessionId, onDraft, openFileId, onOpenFi
   const [importEncoding, setImportEncoding] = useState('auto');
   const [toolPath, setToolPath] = useState(''), [readingFocus, setReadingFocus] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false), [sourceContext, setSourceContext] = useState();
-  useEffect(() => { setSearchOpen(false); setSourceContext(undefined); }, [sessionId]);
+  const [managementOpen, setManagementOpen] = useState(false);
+  useEffect(() => { setSearchOpen(false); setSourceContext(undefined); setManagementOpen(false); }, [sessionId]);
   const openSearchSource = async (id, line) => {
     const target = sessionId;
     try { const file = await request(target, 'info', { params: { id } }); if (currentSession.current === target) { setSelected(file); setSourceContext({ id, line }); setReadingFocus(true); setSearchOpen(false); } }
@@ -25,7 +27,7 @@ export function LogWorkbench({ visible, sessionId, onDraft, openFileId, onOpenFi
   const input = useRef(), currentSession = useRef(sessionId), waiting = useRef([]), running = useRef(false), controller = useRef(), mounted = useRef(true), dragDepth = useRef(0), split = useRef();
   const dropRoot = useRef(), dropQueue = useRef(); dropQueue.current = enqueue;
   useEffect(() => {
-    if (!visible) return; let claimed = false;
+    if (!visible || managementOpen) return; let claimed = false;
     const reset = () => { claimed = false; dragDepth.current = 0; setDragging(false); };
     const capture = event => {
       if (!event.dataTransfer?.types.includes('Files') || !dropRoot.current) return;
@@ -45,7 +47,7 @@ export function LogWorkbench({ visible, sessionId, onDraft, openFileId, onOpenFi
     for (const type of ['dragenter', 'dragover', 'drop']) window.addEventListener(type, capture, true);
     window.addEventListener('dragleave', leave, true); window.addEventListener('dragend', reset);
     return () => { for (const type of ['dragenter', 'dragover', 'drop']) window.removeEventListener(type, capture, true); window.removeEventListener('dragleave', leave, true); window.removeEventListener('dragend', reset); };
-  }, [visible, sessionId]);
+  }, [visible, sessionId, managementOpen]);
   currentSession.current = sessionId;
   const viewSnapshot = useRef(); viewSnapshot.current = { sessionId, selected: selectedState, query, sourceKind, sort, offset, listWidth };
   useEffect(() => () => { if (viewSnapshot.current?.sessionId === sessionId) { workbenchCache.delete(sessionId); workbenchCache.set(sessionId, viewSnapshot.current); while (workbenchCache.size > 20) workbenchCache.delete(workbenchCache.keys().next().value); } }, [sessionId]);
@@ -122,8 +124,9 @@ export function LogWorkbench({ visible, sessionId, onDraft, openFileId, onOpenFi
   const selectionCount = all ? all.count - all.exclude.length : checked.size;
   const sessionQueue = queue.filter(item => item.sessionId === sessionId), queueBusy = sessionQueue.some(item => !['完成', '失败', '已取消'].includes(item.phase));
   if (!sessionId) return <div className="empty">打开一个会话后即可导入和管理日志。</div>;
+  if (managementOpen) return <LogSessionManager key={sessionId} sessionId={sessionId} visible={visible} onClose={() => { setManagementOpen(false); setTick(value => value + 1); }} onChanged={result => { setTick(value => value + 1); if (result.action === 'delete' && result.results.some(row => row.sessionId === sessionId && row.removed)) { setSelected(undefined); setSourceContext(undefined); setReadingFocus(false); setChecked(new Set()); setAll(undefined); setUndo(undefined); } }} />;
   return <section ref={dropRoot} className={'log-library' + (dragging ? ' dragging' : '') + ((readingFocus && selected || searchOpen) ? ' reading-focus' : '')} aria-label="当前会话日志工作台" onDragEnter={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); e.stopPropagation(); dragDepth.current++; setDragging(true); }} onDragOver={e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; } }} onDragLeave={e => { e.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); e.stopPropagation(); dragDepth.current = 0; setDragging(false); enqueue(e.dataTransfer.files); }}>
-    <div className="row spread library-heading"><button aria-pressed={searchOpen} onClick={() => { if (searchOpen) { setSearchOpen(false); setReadingFocus(false); setSourceContext(undefined); } else setSearchOpen(true); }}>{searchOpen ? '返回文件列表' : '跨文件筛选'}</button><span className="muted">当前会话 · 按导入时间排序</span><div className="row"><button onClick={() => setTick(t => t + 1)} aria-label="刷新日志文件">刷新</button><select aria-label="导入日志编码" value={importEncoding} onChange={e => setImportEncoding(e.target.value)}><option value="auto">自动识别编码</option><option value="utf-8">UTF-8</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option><option value="gb18030">GB18030 / GBK</option></select><button className="primary" onClick={() => input.current?.click()}>导入日志</button></div></div>
+    <div className="row spread library-heading"><div className="row"><button aria-pressed={searchOpen} onClick={() => { if (searchOpen) { setSearchOpen(false); setReadingFocus(false); setSourceContext(undefined); } else setSearchOpen(true); }}>{searchOpen ? '返回文件列表' : '跨文件筛选'}</button><button onClick={() => { setDragging(false); setManagementOpen(true); }}>全部会话管理</button></div><span className="muted">当前会话 · 按导入时间排序</span><div className="row"><button onClick={() => setTick(t => t + 1)} aria-label="刷新日志文件">刷新</button><select aria-label="导入日志编码" value={importEncoding} onChange={e => setImportEncoding(e.target.value)}><option value="auto">自动识别编码</option><option value="utf-8">UTF-8</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option><option value="gb18030">GB18030 / GBK</option></select><button className="primary" onClick={() => input.current?.click()}>导入日志</button></div></div>
     <input ref={input} hidden type="file" multiple accept=".txt,.log,.jsonl,.json,.gz,.zip,.rar" onChange={e => enqueue(e.target.files)}/>
     {dragging && <div className="drop-overlay">拖入一个或多个日志文件，自动识别文本、ZIP、GZ 和 RAR</div>}
     {!!sessionQueue.length && <details className="import-queue" open={queueBusy}><summary>导入队列 · {sessionQueue.filter(i => i.phase === '完成').length}/{sessionQueue.length} 完成</summary>{sessionQueue.map(item => <div key={item.id} className="queue-item"><strong>{item.name}</strong><span>{item.phase}{item.phase === '上传中' ? ` ${Math.round(item.bytes / item.size * 100)}%` : ''}</span>{item.error && <span className="error">{item.error}</span>}{item.phase === '失败' && retryFiles.current.has(item.id) && <button onClick={() => enqueue([retryFiles.current.get(item.id)])}>重试导入</button>}</div>)}{queueBusy && <button onClick={cancelQueue}>取消当前会话的导入</button>}</details>}

@@ -1,11 +1,9 @@
-# 让 AI 安装或升级 dshE2E
+# 让 AI 安装或升级 dshVerify
 
-本次配套版本为 dshHarmony 0.5.0-rc.4 / dshE2E 0.4.0-rc.3，发行修订 r2，tag `v0.5.0-rc.4-e2e-0.4.0-rc.3-r2`。不使用裸 latest，也不复制旧电脑 DataHome。
+当前配套版本：dshHarmony **0.5.0-rc.9** + dshVerify **0.5.0-rc.2**；精确 tag：`v0.5.0-rc.9-e2e-0.5.0-rc.2`，Windows x64 / DSH 0.2.0-rc.2 / Node24，RC 预发布。Verify 安装标识仍为 `dsh-e2e`。
 
-把下面这段交给有权访问本机与私有仓库的 AI，并填写版本和路径：
+将下面一段交给另一台电脑上的 AI：
 
-> 请从 Alentaoker/dsh-harmoneydev-tools 的指定提交或 tag 安装/升级 dshE2E 及其配套插件。先读取本目录 INSTALLATION.md 和仓库 docs/AI_INSTALLATION.md。确认 DSH 0.2.0-rc.2、Node 24、实际 DSH_HOME、目标 profile 与插件版本；备份原登记并保留旧来源。使用新 plugin/ 路径执行只读预检，构建两个插件后通过正式 CLI 登记，再用相同环境冷启动。保留其他插件、模型、会话和本地数据；失败按备份恢复本次改动。分别报告文件登记、宿主启用、设备功能哪些完成、哪些未做。不要顺带安装 skill、升级 DSH 宿主或改兼容豁免。
+> 请将本机 DSH 的两个插件配套升级至 v0.5.0-rc.9-e2e-0.5.0-rc.2。从 Alentaoker/dsh-harmoneydev-tools 的该 Release 下载 windows-source.zip 与同名 .sha256，校验后读取包内 docs/AI_UPGRADE.md 和 docs/AI_INSTALLATION.md。先发现这台电脑的 EXE、CLI、真实 Node24/npm、原 DSH_HOME、目标 profile 和旧来源；备份登记与日志库并保留旧来源。使用新的长期目录，PlanOnly 通过且完整退出相关宿主后再安装，Harmony → Verify 构建并通过正式 CLI 登记；desktop/web 分别处理。同环境冷启动，核对版本、全部会话管理、旧日志和草稿；仅预览清理范围后取消。保留其它插件、模型配置、凭据、会话和用户文件，不复制另一台电脑的 Data，不升级宿主或添加兼容豁免。分别报告构建、登记、运行和设备待验项，失败按指南恢复。
 
-配套步骤共用一份 [AI 安装、升级与恢复指南](../../docs/AI_INSTALLATION.md)，以免两份安装流程发生漂移。插件包名仍为 `dsh-e2e`，不能用仓库名代替。若安装来源仍是旧仓库目录，不移动已被运行宿主引用的目录；先准备新来源，再重新登记。
-
-[安装指南](INSTALLATION.md) · [AI 升级与回退](../../docs/AI_UPGRADE.md) · [返回介绍](README.md)
+[完整 AI 安装指南](../../docs/AI_INSTALLATION.md) · [AI 升级与回退](../../docs/AI_UPGRADE.md) · [安装指南](INSTALLATION.md)

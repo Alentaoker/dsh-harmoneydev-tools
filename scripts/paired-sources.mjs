@@ -12,6 +12,7 @@ export const requiredPairedSources = [
   'LogApplicationFilter.jsx',
   'LogSearchHistory.jsx',
   'SessionLogSearch.jsx',
+  'LogSessionManager.jsx',
   'log-client.mjs',
   'log-query.mjs',
   'log-search-menu.mjs',
@@ -35,6 +36,7 @@ export const requiredServerSources = [
   'logs.mjs',
   'evidence.mjs',
   'records.mjs',
+  'log-management.mjs',
 ];
 
 const resolveExtensions = ['', '.mjs', '.jsx', '.js', '.json', '.css'];

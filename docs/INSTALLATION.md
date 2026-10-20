@@ -1,10 +1,10 @@
 # 安装与更新
 
-当前配套插件：dshHarmony 0.5.0-rc.8 / dshVerify 0.5.0-rc.1（安装标识 dsh-e2e；本次为 RC 预发布，tag `v0.5.0-rc.8-e2e-0.5.0-rc.1`）。支持边界为 Windows x64、DSH 0.2.0-rc.2、真正的 Node.js 24 和 npm。下载的源码包仍需联网获取依赖，不包含用户配置、SDK 或驱动。详细流程见 [AI 安装指南](AI_INSTALLATION.md)，本机独立安装证据见 [可移植性记录](PORTABILITY.md)。
+当前配套插件：dshHarmony 0.5.0-rc.9 / dshVerify 0.5.0-rc.2（安装标识 dsh-e2e；本次为 RC 预发布，tag `v0.5.0-rc.9-e2e-0.5.0-rc.2`）。支持边界为 Windows x64、DSH 0.2.0-rc.2、真正的 Node.js 24 和 npm。下载的源码包仍需联网获取依赖，不包含用户配置、SDK 或驱动。详细流程见 [AI 安装指南](AI_INSTALLATION.md)，本机独立安装证据见 [可移植性记录](PORTABILITY.md)。
 
 ## 准备
 
-1. 从有访问权限的私有 Release 下载精确版本 ZIP 和同名 `.sha256`，校验后解压到长期保留的来源目录。安装后不能直接删除或移动它。
+1. 从[公开发布页](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.9-e2e-0.5.0-rc.2) 下载精确版本 ZIP 和同名 `.sha256`，校验后解压到长期保留的来源目录。安装后不能直接删除或移动它。
 2. 确认实际桌面 EXE、CLI、Node/npm 路径和原数据目录。不要照抄其它电脑的盘符或用户名。
 3. 目标 profile 需先由官方宿主初始化。全新桌面安装先在指定 `DSH_HOME` 下启动一次，再正常退出；已有环境直接使用原目录。
 4. 结束设备任务、录像，完整退出目标宿主。`desktop` 和 `web` 分别登记，同一数据目录不代表两个 profile 已同步安装。
@@ -53,7 +53,7 @@ $env:DSH_HOME = $installDataHome
 ## 首次使用与验证
 
 - **离线日志**：不需手机或模型。导入明文或文本 GZ，检查会话日志列表与时间排序、100/500/1000 条分页、搜索、包名、TAG 和详情。AI 分析先生成草稿，发送才进入模型流程。
-- **设备与投屏**：另需本机 HDC、USB 驱动、手机调试授权。`hdc list targets -v` 需显示具体设备 `USB Connected`，`UART Ready` 不算手机在线。在设备设置选择并保存本机 `hdc.exe`，核对路径落盘并在重启后保留。视频扩展内嵌于私有包，无需 DevEco Testing/Java；设备兼容仍需验证。锁屏预览不代表 H.264 流通过。
+- **设备与投屏**：另需本机 HDC、USB 驱动、手机调试授权。`hdc list targets -v` 需显示具体设备 `USB Connected`，`UART Ready` 不算手机在线。在设备设置选择并保存本机 `hdc.exe`，核对路径落盘并在重启后保留。视频扩展随发行包提供，无需 DevEco Testing/Java；设备兼容仍需验证。锁屏预览不代表 H.264 流通过。
 - **原厂二进制 HiLog**：另需 SDK 的 `hilogtool` 与该批日志的配套字典；普通明文、ZIP、RAR 和文本 GZ 不需要它。缺工具或字典时保留原包，补充后重试。
 - **AI/E2E**：配置本机可用模型，给出具体目标和验收条件；检查运行、断言、报告、日志状态与控制释放，不能只看条数。
 

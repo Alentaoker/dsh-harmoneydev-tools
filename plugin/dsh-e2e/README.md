@@ -4,7 +4,7 @@ DeepSeek Harness 的**验证记录与证据服务**：保存开发任务与安�
 
 设备执行与观察由配套的 **dshHarmony** 完成，当前会话 AI 自己做决策。本插件**不再包含**第三方 `e2e@0.19.0` 执行器、内层模型循环、动作缓存或 runner RPC bridge。
 
-当前版本 **0.5.0-rc.1（RC 预发布）**；显示名已由 dshE2E 更新为 dshVerify，安装标识、源码目录、storage `dshE2E` 与既有 API 路径保持不变，无需迁移数据或重装宿主。配套 dshHarmony **0.5.0-rc.8**；运行环境 Windows、DSH **0.2.0-rc.2**、Node **24**。
+当前版本 **0.5.0-rc.2（RC 预发布）**；显示名已由 dshE2E 更新为 dshVerify，安装标识、源码目录、storage `dshE2E` 与既有 API 路径保持不变，无需迁移数据或重装宿主。配套 dshHarmony **0.5.0-rc.9**；运行环境 Windows、DSH **0.2.0-rc.2**、Node **24**。
 
 ## 工作流
 

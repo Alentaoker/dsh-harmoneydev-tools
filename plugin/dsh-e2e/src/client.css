@@ -125,3 +125,22 @@
 .de2e .session-search-results article>button{max-width:100%;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-align:left;color:#a9caff}
 .de2e .session-search-results pre{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 Consolas,monospace}
 .de2e .log-table tr.source-focus{background:#355d8b55;outline:2px solid #8faff8;outline-offset:-2px}
+.de2e .log-session-manager{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:6px}
+.de2e .log-session-manager>header,.de2e .log-session-manager>footer{flex-shrink:0}
+.de2e .log-session-manager h3{margin:0}
+.de2e .log-session-manager>p{margin:0;flex-shrink:0}
+.de2e .log-manager-tools input{flex:1;min-width:160px}
+.de2e .log-manager-actions{flex-shrink:0}
+.de2e .log-manager-table-scroll{flex:1;min-height:100px;overflow:auto;border:1px solid #3b3d46;border-radius:6px}
+.de2e .log-manager-table{width:100%;min-width:700px;border-collapse:collapse;font-size:12px;text-align:left}
+.de2e .log-manager-table th{position:sticky;top:0;z-index:1;background:var(--surface-raised,#25262c)}
+.de2e .log-manager-table td,.de2e .log-manager-table th{padding:8px;border-bottom:1px solid #34363e;vertical-align:top}
+.de2e .log-manager-table td:nth-child(2){max-width:360px;overflow-wrap:anywhere}
+.de2e .log-manager-table small{display:block;color:var(--text-secondary,#a4a6b0);font-size:11px}
+.de2e .log-manager-table input[type=checkbox]{width:16px;height:16px;margin:3px;accent-color:#8ba7ff}
+.de2e .log-manager-confirm{max-height:45vh;overflow:auto;flex-shrink:0}
+.de2e .log-manager-confirm ul{max-height:130px;overflow:auto;padding-left:24px}
+.de2e .log-manager-confirm small{overflow-wrap:anywhere}
+.de2e .log-manager-confirm label{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.de2e .log-manager-confirm input{width:110px}
+.de2e .log-manager-error{max-height:100px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}

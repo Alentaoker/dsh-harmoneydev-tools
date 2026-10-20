@@ -68,7 +68,7 @@ test('session logs are the real dshE2E workbench, not a second viewer', () => {
   assert.match(sessionPane, /import "\@dsh-e2e-workbench-css";/);
   assert.match(sessionPane, /import \{ LogWorkbench \} from "\@dsh-e2e-workbench";/);
   assert.match(sessionPane, /<LogWorkbench visible=\{active\} sessionId=\{sessionId\} openFileId=\{focusFileId\} onOpenFileConsumed=\{onFocusConsumed\} onDraft=\{onDraft\} \/>/);
-  assert.match(sessionPane, /className="de2e"/, 'dshE2E scopes its styles under .de2e');
+  assert.match(sessionPane, /className="[^"]*\bde2e\b[^"]*"/, 'dshE2E scopes its styles under .de2e');
   // A requested file is honoured once; the caller clears it so a later tab switch
   // keeps whatever file the person opened by hand.
   assert.match(shell, /onFocusConsumed=\{\(\) => setFocusFileId\(undefined\)\}/);

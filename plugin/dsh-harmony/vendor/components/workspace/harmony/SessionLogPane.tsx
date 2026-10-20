@@ -14,7 +14,8 @@ import { LogWorkbench } from "@dsh-e2e-workbench";
  *
  * The paired source is resolved at build time (see scripts/build.mjs); a build
  * without it renders an explicit pairing notice instead of a reduced viewer.
- * dshE2E scopes its styles under `.de2e`, which this wrapper provides.
+ * Keep both the dshE2E style scope and its flex shell: the workbench needs a
+ * flex parent to fill the available panel height instead of sizing to content.
  */
 export function SessionLogPane({ active, sessionId, focusFileId, onFocusConsumed, onDraft }: {
   active: boolean;
@@ -24,7 +25,7 @@ export function SessionLogPane({ active, sessionId, focusFileId, onFocusConsumed
   onFocusConsumed?: () => void;
   onDraft?: (text: string) => void;
 }) {
-  return <div className="de2e" data-session-log-pane="">
+  return <div className="de2e log-workbench-shell" data-session-log-pane="">
     <LogWorkbench visible={active} sessionId={sessionId} openFileId={focusFileId} onOpenFileConsumed={onFocusConsumed} onDraft={onDraft} />
   </div>;
 }

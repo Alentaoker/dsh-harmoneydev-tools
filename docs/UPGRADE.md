@@ -2,7 +2,7 @@
 
 以 [AI 安装指南](AI_INSTALLATION.md) 为完整操作顺序。这里补充本次数据格式与版本边界。
 
-本次配套 Harmony 0.5.0-rc.8 / dshVerify 0.5.0-rc.1（原 dshE2E 显示名，安装标识仍为 dsh-e2e；本次为 RC 预发布）：视频按阶段自动连接与恢复、锁屏单独等待、兼容预览降频并限制积压、统一日志工作台与搜索历史、批注加入对话后自动关闭。上一版为 Harmony rc.5 / E2E rc.5（日志平铺、10 万行、手动媒体批注）。本机运行验收见 [验收报告](RELEASE_ACCEPTANCE_20261018.md)。完整迁移与回退见 [AI 升级指南](AI_UPGRADE.md)。
+本次配套 Harmony **0.5.0-rc.9** / dshVerify **0.5.0-rc.2**，上一版为 rc.8 / Verify rc.1。新增全部会话日志管理、全高日志布局与实时/历史会话名称兼容；安装标识、storage、日志协议 2 不变，无需迁移用户数据。见 [本次交付](RELEASE_ACCEPTANCE_20261020.md)、[AI 升级指南](AI_UPGRADE.md)。以下旧版本小节仅作历史记录，旧 run/replay/retry 执行契约已经退役，不用于当前升级验收。
 
 ## 0.1.2 → 0.2.0
 
@@ -31,7 +31,7 @@
 
 - 安装脚本支持 PowerShell 5.1/7、空格路径和任意盘符；桌面 EXE 可用于推导 CLI/Node，CLI、Node、npm、数据目录/profile 都可显式指定。
 - `PlanOnly` 实际检查 Node 24、npm、宿主 0.2.0-rc.2、锁文件、profile 与资源；与旧脚本不同，预览也拒绝不兼容运行时。
-- 私有 Release 提供独立源码 ZIP 与 SHA256，不带 node_modules、用户配置/日志；仍需联网下载依赖，不属于离线安装包。
+- 公开 Release 提供独立源码 ZIP 与 SHA256，不带 node_modules、用户配置/日志；仍需联网下载依赖，不属于离线安装包。
 - 两个插件先全部构建成功，再通过正式 `plugin --profile ... add` 登记并检查实际包、客户端和 worker。desktop/web 各自登记，不合并其它供应商。
 - 原生组件、许可证与来源信息保留；原生资源缺失时提示截图能力，哈希错误时预检停止。新电脑仍需 HDC/驱动，无需运行 DevEco Testing/Java。
 - 登记新目录前保留旧来源/profile 备份；失败用正式 plugin add 恢复旧包登记，仅合并本次字段，不覆盖整个数据目录。

@@ -8,6 +8,7 @@ import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { createLogLibrary } from './log-library.mjs';
+import { listLogSessionLabels } from './log-management.mjs';
 import { pluginVersion } from './version.mjs';
 import { createLegacyReader } from './legacy.mjs';
 import { createValidationService } from './validation-service.mjs';
@@ -38,7 +39,7 @@ export function inside(root, requested) {
 }
 
 export function createService(ctx, root = dataRoot) {
-  const logLibrary = createLogLibrary(root);
+  const logLibrary = createLogLibrary(root, { listSessions: () => listLogSessionLabels(ctx) });
   const legacy = createLegacyReader(root);
   const harmonyService = () => typeof ctx.reflect?.get === 'function' ? ctx.reflect.get('dshHarmony') : ctx.dshHarmony;
   const managerFor = () => {

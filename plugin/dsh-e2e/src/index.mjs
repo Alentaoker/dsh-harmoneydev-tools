@@ -38,6 +38,9 @@ export function apply(ctx) {
 export function registerRoutes(ctx, service) {
   for (const [path, methods, handler] of [
     ['/api/dsh-e2e/log-library/capabilities', ['GET'], request => ({ protocolVersion: 2, features: ['groups', 'packages', 'blocks', 'favorites', 'analysis-paths', 'rar', 'text-encodings', 'cross-file-search'], limits: { textBytes: 268435456, packageBytes: 536870912, expandedBytes: 2147483648, pageLines: 1000 }, sessionId: requestScope(request, true).sessionId, storage: 'session', plugin: 'dshE2E' })],
+    ['/api/dsh-e2e/log-library/management/sessions', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.management.sessions({ query: p.get('query') || '', offset: p.get('offset') || 0, limit: p.get('limit') || 50 }, requestScope(request, true)); }],
+    ['/api/dsh-e2e/log-library/management/prepare', ['POST'], async request => service.logLibrary.management.prepare(await mutationBody(request, 64 * 1024), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/management/execute', ['POST'], async request => service.logLibrary.management.execute(await mutationBody(request), requestScope(request, true))],
     ['/api/dsh-e2e/log-library/groups', ['GET'], request => service.logLibrary.groups(requestScope(request, true))],
     ['/api/dsh-e2e/log-library/delete-group', ['POST'], async request => service.logLibrary.deleteGroup((await mutationBody(request)).id, requestScope(request, true))],
     ['/api/dsh-e2e/log-library/create-group', ['POST'], async request => service.logLibrary.createGroup((await mutationBody(request)).name, requestScope(request, true))],

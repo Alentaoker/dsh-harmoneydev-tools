@@ -1,6 +1,6 @@
 {
   "name": "dsh-e2e",
-  "version": "0.5.0-rc.1",
+  "version": "0.5.0-rc.2",
   "private": true,
   "type": "module",
   "description": "dshVerify（鸿蒙开发验证）— 开发任务、安装交接、验证轮次、追加事件与证据服务；设备执行与观察由 dshHarmony 完成。安装标识仍为 dsh-e2e",

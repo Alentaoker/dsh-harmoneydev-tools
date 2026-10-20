@@ -12,9 +12,10 @@ const idPattern = /^[0-9a-f-]{36}$/;
 export { parseImportedLog } from './log-parser.mjs';
 import { parseImportedLog } from './log-parser.mjs';
 import { compileLogQuery, validatePage } from './log-query.mjs';
+import { createLogManagement } from './log-management.mjs';
 
 export function createLogLibrary(root, options = {}) {
-  const base = resolve(root, 'log-library'), uploads = new Map(), locks = new Map(), selections = new Map(), workers = new Set();
+  const base = resolve(root, 'log-library'), uploads = new Map(), locks = new Map(), selections = new Map(), workers = new Set(), managementBusy = new Set();
   let processing = Promise.resolve(), disposed = false, activeWorkers = 0; const workerWaiters = [], migrating = new Map();
   const owner = scope => {
     const id = scope?.sessionId;
@@ -130,6 +131,7 @@ export function createLogLibrary(root, options = {}) {
     signal?.throwIfAborted();
     let value = await metadata(id, scope);
     if (!value.isPackage && value.storage !== 'blocks-v1') {
+      if (managementBusy.has(owner(scope))) throw Error('此会话正在清理日志，请稍后读取');
       const migrationKey = owner(scope) + ':' + id;
       if (!migrating.has(migrationKey)) {
         const task = (async () => { const dir = await checked(directory(id, scope)); const result = await runWorker('index', { directory: dir, snapshot: value.snapshot }, signal); return locked(scope, async () => { const current = await metadata(id, scope), next = { ...current, ...result, legacyNormalizedBytes: current.normalizedBytes || 0, storedBytes: current.size + (current.normalizedBytes || 0) + result.bodyStoredBytes }; await saveMetadata(dir, next); return next; }); })().finally(() => migrating.delete(migrationKey)); migrating.set(migrationKey, task);
@@ -208,6 +210,7 @@ export function createLogLibrary(root, options = {}) {
       validateLogEncoding(encoding);
       const sessionId = owner(scope), isPackage = !internal && sourceKind === 'import' && packageName(name);
       if (disposed) throw Error('日志库已经关闭');
+      if (managementBusy.has(sessionId)) throw Error('此会话正在清理日志，请稍后导入');
       if (typeof name !== 'string' || !name.trim() || name.length > 256 || !Number.isSafeInteger(size) || size < 1 || size > (isPackage ? PACKAGE_BYTES : TEXT_BYTES)) throw Error('明文每份最多 256 MiB，ZIP / GZ / RAR 每份最多 512 MiB');
       if (!['import', 'realtime'].includes(sourceKind)) throw Error('日志来源无效');
       if (snapshot !== undefined && (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || JSON.stringify(snapshot).length > 3000)) throw Error('日志快照信息无效');
@@ -215,6 +218,7 @@ export function createLogLibrary(root, options = {}) {
       if (groupId) await groupMetadata(groupId, scope);
       else if (isPackage) groupId = (await library.createGroup(name.replace(/\.(zip|gz)$/i, ''), scope)).id;
       const id = randomUUID(), dir = directory(id, scope), value = { id, sessionId, name: name.split(/[\\/]/).pop(), sourceKind, snapshot, groupId, origin, lenientUTF8: internal && lenientUTF8, encoding, size, received: 0, nextChunk: 0, createdAt: new Date().toISOString(), status: 'importing', isPackage, busy: true };
+      if (managementBusy.has(sessionId)) throw Error('此会话正在清理日志，请稍后导入');
       value.controller = new AbortController(); value.hash = createHash('sha256'); uploads.set(id, value);
       try { await mkdir(dir, { recursive: true }); await checked(dir); await writeFile(join(dir, 'source.log'), ''); await saveMetadata(dir, value); value.busy = false; return clean(value); }
       catch (error) { uploads.delete(id); throw error; }
@@ -238,6 +242,7 @@ export function createLogLibrary(root, options = {}) {
     async retryPackage(id, scope, encoding) {
       if (encoding !== undefined) validateLogEncoding(encoding);
       const value = await metadata(id, scope); if (!value.isPackage || dictionaryName(value.name)) throw Error('此文件无需重新解析');
+      if (managementBusy.has(owner(scope))) throw Error('此会话正在清理日志，请稍后解析');
       if (uploads.has(id)) throw Error('正在解析此包');
       if (encoding !== undefined) value.encoding = encoding;
       value.controller = new AbortController(); value.busy = true; value.retry = true; uploads.set(id, value);
@@ -333,8 +338,10 @@ export function createLogLibrary(root, options = {}) {
         return { restored: restored.length, errors };
       });
     },
-    async purge(scope, before) {
-      return locked(scope, async () => { if (!before || !Number.isFinite(Date.parse(before))) throw Error('回收区清空需要确认时的时间边界'); const values = (await trashed(scope)).filter(file => file.deletedAt <= before); const errors = []; let removed = 0; for (const file of values) { try { await rm(await checked(join(base, 'trash', key(scope), file.batchId, file.id)), { recursive: true, force: true }); removed++; } catch (error) { errors.push({ id: file.id, error: error.message }); } } return { removed, errors }; });
+    async purge(scope, before, selectedFiles) {
+      if (selectedFiles && (!Array.isArray(selectedFiles) || selectedFiles.length > 10000)) throw Error('回收区选择无效');
+      const requested = selectedFiles && new Set(selectedFiles.map(file => `${validId(file.batchId)}:${validId(file.id)}`));
+      return locked(scope, async () => { if (!before || !Number.isFinite(Date.parse(before))) throw Error('回收区清空需要确认时的时间边界'); const values = (await trashed(scope)).filter(file => requested ? requested.has(`${file.batchId}:${file.id}`) : file.deletedAt <= before); const errors = []; let removed = 0; for (const file of values) { try { await rm(await checked(join(base, 'trash', key(scope), file.batchId, file.id)), { recursive: true, force: true }); removed++; } catch (error) { errors.push({ id: file.id, error: error.message }); } } return { removed, errors }; });
     },
     async unassigned(scope) {
       owner(scope); const values = [];
@@ -361,7 +368,14 @@ export function createLogLibrary(root, options = {}) {
         return completed;
       }));
     },
-    async dispose() { disposed = true; for (const controller of workers) controller.abort(Error('日志库关闭')); for (const value of uploads.values()) value.controller?.abort(Error('日志库关闭')); selections.clear(); for (const value of uploads.values()) { value.cancelled = true; if (!value.busy) await cleanupCancelled(value).catch(() => {}); } },
+    async dispose() { disposed = true; library.management.dispose(); for (const controller of workers) controller.abort(Error('日志库关闭')); for (const value of uploads.values()) value.controller?.abort(Error('日志库关闭')); selections.clear(); for (const value of uploads.values()) { value.cancelled = true; if (!value.busy) await cleanupCancelled(value).catch(() => {}); } },
   };
+  library.management = createLogManagement({ base, checked, owner, library, listSessions: options.listSessions, reserve(scope) {
+    const sessionId = owner(scope);
+    if (disposed) throw Error('日志库已经关闭');
+    if (managementBusy.has(sessionId) || [...uploads.values()].some(file => file.sessionId === sessionId) || [...migrating.keys()].some(id => id.startsWith(sessionId + ':'))) throw Error('此会话正在导入、解析或清理日志，请稍后重试');
+    managementBusy.add(sessionId);
+    return () => managementBusy.delete(sessionId);
+  } });
   return library;
 }
