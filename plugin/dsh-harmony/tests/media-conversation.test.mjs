@@ -6,6 +6,11 @@ const source=await readFile(join(temp,'session.mjs'),'utf8');
 const reactPath=pathToFileURL(join(process.cwd(),'node_modules/react/index.js')).href;
 const {writeFile}=await import('node:fs/promises');await writeFile(join(temp,'session.mjs'),source.replaceAll('from "react"',`from ${JSON.stringify(reactPath)}`));
 const {prepareMediaAttachment}=await import(pathToFileURL(join(temp,'session.mjs')));
+// Finish every asynchronous module-level fixture before registering tests.
+// Otherwise node:test can run the early tests and their root after-hook while
+// the second esbuild invocation is still writing into the same temp directory.
+await build({entryPoints:['vendor/lib/harmony/artifacts.ts','vendor/lib/harmony/media-history.ts'],bundle:true,platform:'node',format:'esm',outdir:join(temp,'artifacts')});
+const {saveHarmonyScreenshot,markMediaOrigin}=await import(pathToFileURL(join(temp,'artifacts/artifacts.js'))),{listHarmonyMediaHistory}=await import(pathToFileURL(join(temp,'artifacts/media-history.js')));
 test.after(()=>rm(temp,{recursive:true,force:true}));
 function fixture(){const attached=[],state={draft:'原有问题',phase:'plain',occurrences:[{label:'已有引用'}],attachmentIds:['existing']};let alive=true,accepted=true,released=0;
 const input={state:{getSnapshot:()=>state},addAttachments:ids=>{if(!accepted)return false;attached.push(...ids);return true;},focus(){},setDraft(){throw Error('Must preserve the draft');}};
@@ -15,8 +20,6 @@ test('image attachment preserves text, reference chips and existing attachments;
 test('busy composer and retired destination refuse images; failed admission releases drafts',async()=>{const f=fixture(),attach=prepareMediaAttachment(f.ctx,'A'),file=new File(['png'],'a.png',{type:'image/png'});f.state.phase='submitting';await assert.rejects(attach(file),/正在/);f.state.phase='plain';f.setAccepted(false);await assert.rejects(attach(file),/未加入/);assert.equal(f.released(),1);f.setAlive(false);await assert.rejects(attach(file),/关闭/);});
 test('older hosts fail explicitly instead of replacing text with a file path',()=>{const f=fixture();delete f.ctx.conversation.createDrafts;assert.throws(()=>prepareMediaAttachment(f.ctx,'A'),/配套 DSH/);});
 
-await build({entryPoints:['vendor/lib/harmony/artifacts.ts','vendor/lib/harmony/media-history.ts'],bundle:true,platform:'node',format:'esm',outdir:join(temp,'artifacts')});
-const {saveHarmonyScreenshot,markMediaOrigin}=await import(pathToFileURL(join(temp,'artifacts/artifacts.js'))),{listHarmonyMediaHistory}=await import(pathToFileURL(join(temp,'artifacts/media-history.js')));
 test('manual media is device-wide across sessions and excludes automation; unknown old files are not reclassified',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'dsh-origin-')),config={storage:{screenshotDirectory:join(dir,'screenshots'),recordingDirectory:join(dir,'recordings')}};
   try{const png=Buffer.alloc(64);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.write('IHDR',12);png.writeUInt32BE(1,16);png.writeUInt32BE(1,20);
