@@ -7,7 +7,7 @@ const labels = { delete: '移入回收区', restore: '恢复回收日志', purge
 export function LogSessionManager({ sessionId, visible, onClose, onChanged }) {
   const [page, setPage] = useState(), [query, setQuery] = useState(''), [debounced, setDebounced] = useState(''), [offset, setOffset] = useState(0), [tick, setTick] = useState(0);
   const [selected, setSelected] = useState(new Set()), [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
-  const [plan, setPlan] = useState(), [phrase, setPhrase] = useState('');
+  const [plan, setPlan] = useState();
   const alive = useRef(false), running = useRef(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { const timer = setTimeout(() => { setDebounced(query); setOffset(0); }, 250); return () => clearTimeout(timer); }, [query]);
@@ -24,12 +24,12 @@ export function LogSessionManager({ sessionId, visible, onClose, onChanged }) {
   async function prepare(action) {
     if (running.current || !selected.size) return;
     running.current = true; setBusy(true); setError(''); setNotice('');
-    try { const value = await request(sessionId, 'management/prepare', { body: { action, sessionIds: [...selected] } }); if (alive.current) { setPlan(value); setPhrase(''); } }
+    try { const value = await request(sessionId, 'management/prepare', { body: { action, sessionIds: [...selected] } }); if (alive.current) setPlan(value); }
     catch (error) { if (alive.current) setError(error.message); }
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
   async function execute() {
-    if (running.current || !plan || plan.action === 'purge' && phrase !== '删除') return;
+    if (running.current || !plan) return;
     running.current = true; setBusy(true); setError('');
     try {
       const result = await request(sessionId, 'management/execute', { body: { token: plan.token, confirm: true } });
@@ -54,8 +54,7 @@ export function LogSessionManager({ sessionId, visible, onClose, onChanged }) {
       <strong>{labels[plan.action]}：{plan.sessionCount} 个会话、{plan.count} 份日志（约 {size(plan.bytes)}）？</strong>
       <p id="log-manager-confirm-description">{plan.action === 'purge' ? '永久删除无法撤销；只处理这次确认列表中的回收日志。' : plan.action === 'delete' ? '移入各自会话的回收区，支持恢复。' : '恢复到日志原所属会话。'}确认后新导入或新移入回收区的日志不会加入本次操作。</p>
       <ul>{plan.sessions.map(row => <li key={row.sessionId}>{row.name} · {row.count} 份 <small>（{row.sessionId}）</small></li>)}</ul>
-      {plan.action === 'purge' && <label>输入“删除”以确认永久清空 <input aria-label="永久清空确认文字" autoComplete="off" disabled={busy} value={phrase} onChange={event => setPhrase(event.target.value)}/></label>}
-      <div className="row"><button disabled={busy || plan.action === 'purge' && phrase !== '删除'} onClick={execute}>{busy ? '正在处理…' : `确认${labels[plan.action]}`}</button><button disabled={busy} onClick={() => setPlan(undefined)}>取消</button></div>
+      <div className="row"><button disabled={busy} onClick={execute}>{busy ? '正在处理…' : labels[plan.action]}</button><button disabled={busy} onClick={() => setPlan(undefined)}>取消</button></div>
     </section>}
     <div className="log-manager-table-scroll"><table className="log-manager-table"><thead><tr><th><input type="checkbox" aria-label="全选本页会话" disabled={busy || loading || !!plan || !page?.sessions.length} checked={allPage} onChange={event => setSelected(values => { const next = new Set(values); for (const row of page.sessions) event.target.checked ? next.add(row.sessionId) : next.delete(row.sessionId); return next; })}/></th><th>会话</th><th>暂存日志</th><th>回收区</th><th>最近导入</th></tr></thead><tbody>
       {page?.sessions.map(row => <tr key={row.sessionId}><td><input type="checkbox" aria-label={'选择会话 ' + row.name} disabled={busy || loading || !!plan} checked={selected.has(row.sessionId)} onChange={event => setSelected(values => { const next = new Set(values); event.target.checked ? next.add(row.sessionId) : next.delete(row.sessionId); return next; })}/></td><td><strong>{row.name}</strong>{row.sessionId === sessionId && <span className="badge">当前会话</span>}<small>{row.sessionId}{!row.nameAvailable && ' · 会话名称不可用'}</small></td><td>{row.files} 份<br/>{size(row.bytes)}</td><td>{row.trashFiles} 份<br/>{size(row.trashBytes)}</td><td>{row.updatedAt ? new Date(row.updatedAt).toLocaleString('zh-CN') : '—'}</td></tr>)}
