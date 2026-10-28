@@ -10,10 +10,11 @@ import { join, resolve, relative, isAbsolute, basename, dirname } from 'node:pat
 import { spawn } from 'node:child_process';
 import yauzl from 'yauzl';
 import { TEXT_BYTES, PACKAGE_BYTES } from './log-storage.mjs';
+import { EXPANDED_BYTES, MAX_PACKAGE_ENTRIES, expandedLimitLabel } from './log-limits.mjs';
 export { PACKAGE_BYTES };
 export const packageName = name => /\.(zip|gz|rar)$/i.test(name || '');
 export const dictionaryName = name => /^hilog_dict[^/\\]*\.zip$/i.test(basename(name || ''));
-const TOTAL_BYTES = 2 * 1024 * 1024 * 1024, MAX_ENTRIES = 10000;
+const TOTAL_BYTES = EXPANDED_BYTES, MAX_ENTRIES = MAX_PACKAGE_ENTRIES;
 export async function findHilogTool(configured) {
   const candidates = [configured, process.env.HILOGTOOL_PATH];
   for (const sdk of [process.env.DEVECO_SDK_HOME, process.env.OHOS_SDK_HOME, process.env.HOS_SDK_HOME, process.env.DEVECO_STUDIO_HOME].filter(Boolean)) {
@@ -38,7 +39,7 @@ async function filesBelow(root) {
 }
 function byteLimit(budget, maximum = TEXT_BYTES, expectedCRC) {
   let bytes = 0, crc = 0;
-  return new Transform({ transform(chunk, encoding, callback) { bytes += chunk.length; budget.bytes += chunk.length; if (expectedCRC !== undefined) crc = crc32(chunk, crc); if (bytes > maximum || budget.bytes > TOTAL_BYTES) callback(Error('展开内容超过限制：单份 256 MiB / 本包 2 GiB')); else callback(null, chunk); }, flush(callback) { callback(expectedCRC !== undefined && crc !== expectedCRC ? Error('ZIP 文件 CRC 校验失败，原包保留') : undefined); } });
+  return new Transform({ transform(chunk, encoding, callback) { bytes += chunk.length; budget.bytes += chunk.length; if (expectedCRC !== undefined) crc = crc32(chunk, crc); if (bytes > maximum || budget.bytes > TOTAL_BYTES) callback(Error(expandedLimitLabel)); else callback(null, chunk); }, flush(callback) { callback(expectedCRC !== undefined && crc !== expectedCRC ? Error('ZIP 文件 CRC 校验失败，原包保留') : undefined); } });
 }
 async function extractZip(source, destination, budget, signal) {
   const zip = await new Promise((yes, no) => yauzl.open(source, { lazyEntries: true, validateEntrySizes: true }, (error, value) => error ? no(error) : yes(value)));
@@ -123,7 +124,7 @@ export async function importPackage({ source, name, work, signal, dictionaries =
           const timer = setInterval(async () => { if (checking) return; checking = true; try { let size = 0; for (const file of await filesBelow(output)) { size += (await stat(file)).size; if (size + budget.bytes > TOTAL_BYTES || (await stat(file)).size > TEXT_BYTES) { quota.abort(Error('HiLog 解析产物超过容量限制')); break; } } } catch (error) { quota.abort(error); } finally { checking = false; } }, 500); timer.unref();
           let message; try { message = await runTool(tool, ['parse', '-i', relative(toolWork, input), '-o', relative(toolWork, output), '-d', basename(localDict)], combined, toolWork); combined.throwIfAborted(); } finally { clearInterval(timer); }
           const produced = await filesBelow(output); let bytes = 0;
-          for (const file of produced) { bytes += (await stat(file)).size; if (bytes > TOTAL_BYTES) throw Error('HiLog 解析产物超过 2 GiB'); }
+          for (const file of produced) { bytes += (await stat(file)).size; if (bytes > TOTAL_BYTES) throw Error('HiLog 解析产物超过累计 8 GiB'); }
           if (produced.length) {
             for (const path of produced) if (/\.(txt|log|jsonl)$/i.test(path) || await textFile(path, encoding)) text.push({ path, name: basename(path), relativePath: relative(output, path).replaceAll('\\', '/'), decoded: true });
             decoded = true; if (/unknown log|OpenUuidFile fail|\b300\b/i.test(message)) { parsingStatus = 'partial'; warnings.push('部分日志与字典不匹配，请核对配套字典；已保留可解析结果。'); } break;

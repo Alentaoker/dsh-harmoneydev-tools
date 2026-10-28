@@ -92,7 +92,7 @@ export function createLogManagement({ base, checked, owner, library, reserve, li
       if (query.length > 256 || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw Error('会话管理查询参数无效');
       const names = await titles();
       const rows = [...(await catalog()).values()].map(value => summary(value, names)).filter(row => !query || `${row.name} ${row.sessionId}`.toLocaleLowerCase().includes(query)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.sessionId.localeCompare(b.sessionId));
-      return { sessions: rows.slice(offset, offset + limit), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null, totals: rows.reduce((sum, row) => ({ files: sum.files + row.files, bytes: sum.bytes + row.bytes, trashFiles: sum.trashFiles + row.trashFiles, trashBytes: sum.trashBytes + row.trashBytes }), { files: 0, bytes: 0, trashFiles: 0, trashBytes: 0 }), instruction: '仅统计离线会话日志；空间为原包和正文估算，不含索引、临时文件及文件系统开销。移入回收区不会释放磁盘空间。' };
+      return { sessions: rows.slice(offset, offset + limit), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null, totals: rows.reduce((sum, row) => ({ files: sum.files + row.files, bytes: sum.bytes + row.bytes, trashFiles: sum.trashFiles + row.trashFiles, trashBytes: sum.trashBytes + row.trashBytes }), { files: 0, bytes: 0, trashFiles: 0, trashBytes: 0 }), instruction: '仅统计离线会话日志；空间为原包和正文估算，不含索引、临时文件及文件系统开销。删除会直接移除插件日志副本，包含所选会话的旧版本删除残留。' };
     },
     async prepare({ sessionIds, action }, scope) {
       const requester = owner(scope);
@@ -101,13 +101,13 @@ export function createLogManagement({ base, checked, owner, library, reserve, li
       const values = await catalog(), targets = [], names = await titles(); let count = 0, totalBytes = 0;
       for (const sessionId of new Set(sessionIds)) {
         const session = values.get(sessionId); if (!session) throw Error('所选会话已没有可管理的日志，请刷新列表');
-        const records = session[action === 'delete' ? 'ready' : 'trash'];
+        const records = action === 'delete' ? [...session.ready, ...session.trash] : session.trash;
         if (!records.length) continue;
         count += records.length; if (count > 10000) throw Error('单次最多处理 10000 份日志，请缩小选择范围');
         totalBytes += records.reduce((sum, file) => sum + bytes(file), 0);
         targets.push({ sessionId, name: names.get(sessionId) || `会话 ${sessionId}`, records: records.map(file => ({ id: file.id, batchId: file.batchId, identity: identity(file) })) });
       }
-      if (!count) throw Error(action === 'delete' ? '所选会话没有暂存日志' : '所选会话回收区为空');
+      if (!count) throw Error(action === 'delete' ? '所选会话没有可删除的日志' : '所选会话没有旧版本残留');
       const now = Date.now(); for (const [id, plan] of plans) if (plan.expiresAt <= now) plans.delete(id);
       while (plans.size >= 20) plans.delete(plans.keys().next().value);
       const token = randomUUID(), expiresAt = now + 10 * 60000, before = new Date(now).toISOString();
@@ -141,8 +141,14 @@ export function createLogManagement({ base, checked, owner, library, reserve, li
               }
             }
           } else {
-            const result = plan.action === 'delete' ? await library.remove({ ids: valid.map(file => file.id) }, targetScope) : await library.purge(targetScope, plan.before, valid);
-            removed += result.removed; results.push({ sessionId: target.sessionId, ...result }); errors.push(...result.errors.map(error => ({ sessionId: target.sessionId, ...error })));
+            const live = valid.filter(file => !file.batchId), legacy = valid.filter(file => file.batchId);
+            const operations = [];
+            if (plan.action === 'delete' && live.length) operations.push(() => library.remove({ ids: live.map(file => file.id) }, targetScope));
+            if (legacy.length) operations.push(() => library.purge(targetScope, plan.before, legacy));
+            for (const operation of operations) {
+              const result = await operation();
+              removed += result.removed; results.push({ sessionId: target.sessionId, ...result }); errors.push(...result.errors.map(error => ({ sessionId: target.sessionId, ...error })));
+            }
           }
         } catch (error) { errors.push({ sessionId: target.sessionId, error: error.message }); }
         finally { release?.(); }

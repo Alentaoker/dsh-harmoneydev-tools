@@ -1,6 +1,6 @@
 # dshHarmony 安装指南
 
-当前配套预发布：dshHarmony 0.5.0-rc.9 + dshVerify 0.5.0-rc.2（安装标识 dsh-e2e），tag `v0.5.0-rc.9-e2e-0.5.0-rc.2`。无需迁移用户数据或重装宿主；[本次运行验收](../../docs/RELEASE_ACCEPTANCE_20261020.md) · [可移植性验证范围](../../docs/PORTABILITY.md)。
+当前配套预发布：dshHarmony 0.5.0-rc.10 + dshVerify 0.5.0-rc.3（安装标识 dsh-e2e），tag `v0.5.0-rc.10-e2e-0.5.0-rc.3`。无需迁移用户数据或重装宿主；[本次运行验收](../../docs/LOG_FIRST_ACCEPTANCE_20261028.md) · [可移植性验证范围](../../docs/PORTABILITY.md)。
 
 本仓库当前版本的两个插件配套安装。要求 Windows、DSH 0.2.0-rc.2、Node 24 和 npm；目标 DSH 数据目录及 desktop/web profile 已初始化。手机功能另需 HDC、驱动和调试授权，离线日志阅读不需要手机。
 

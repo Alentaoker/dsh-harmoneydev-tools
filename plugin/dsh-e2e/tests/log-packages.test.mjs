@@ -8,6 +8,7 @@ import { join, dirname } from 'node:path';
 import { gzipSync, crc32, gunzipSync } from 'node:zlib';
 import { createLogLibrary } from '../src/log-library.mjs';
 import { logAnalysisPrompt, directoryAnalysisPrompt } from '../src/log-client.mjs';
+import { TEXT_BYTES, PACKAGE_BYTES, EXPANDED_BYTES } from '../src/log-limits.mjs';
 const A = { sessionId: 'package-A' }, B = { sessionId: 'package-B' };
 const line = (bundle, text, pid = 11) => `10-16 00:01:02.003 ${pid} 12 I C00123/${bundle}/Work: ${text}\n`;
 export function zipFixture(entries) {
@@ -22,14 +23,16 @@ export function zipFixture(entries) {
 async function fixture(fn, options) { const root = await mkdtemp(join(tmpdir(), 'dsh-packages-')), library = createLogLibrary(root, options); try { await fn(library, root); } finally { await library.dispose(); await rm(root, { recursive: true, force: true }); } }
 async function upload(library, name, source, extra = {}, scope = A) { const bytes = Buffer.from(source), value = await library.begin({ name, size: bytes.length, ...extra }, scope); for (let i = 0, at = 0; at < bytes.length; i++, at += 262144) await library.chunk(value.id, i, bytes.subarray(at, at + 262144), scope); return library.finish(value.id, scope); }
 
-test('目录只属于当前会话；改名不改路径，移动、删除及恢复保留归属', () => fixture(async library => {
+test('目录只属于当前会话；改名不改路径，移动后删除直接释放原文件且不可恢复', () => fixture(async (library, root) => {
   const group = await library.createGroup('批次一', A), single = await upload(library, '临时.log', line('test.app', 'single'));
   assert.equal((await library.list(0, 20, A, { groupId: '' })).total, 1);
   await assert.rejects(library.move([single.id], group.id, B)); await assert.rejects(library.renameGroup(group.id, '外部', B));
   await library.move([single.id], group.id, A); assert.equal((await library.list(0, 20, A, { groupId: '' })).total, 0);
   const before = await library.analysis({ groupId: group.id }, A); await library.renameGroup(group.id, '重命名批次', A); const after = await library.analysis({ groupId: group.id }, A); assert.equal(before.directory, after.directory);
-  const removed = await library.deleteGroup(group.id, A); assert.equal((await library.groups(A)).groups.length, 0); assert.equal(removed.removed, 1);
-  await library.restore(removed.batchId, A); assert.equal((await library.groups(A)).groups[0].name, '重命名批次'); assert.equal((await library.info(single.id, A)).groupId, group.id);
+  const source = await library.source(single.id, A);
+  const removed = await library.deleteGroup(group.id, A); assert.equal((await library.groups(A)).groups.length, 0); assert.equal(removed.removed, 1); assert.equal(removed.permanent, true); assert.equal(removed.batchId, undefined);
+  await assert.rejects(readFile(source.path), /ENOENT/); await assert.rejects(library.info(single.id, A)); assert.equal((await library.trash(0, 20, A)).total, 0);
+  await assert.rejects(readdir(join(root, 'log-library', 'trash')), /ENOENT/);
 }));
 test('全量离线日志按明确包名过滤；同PID、近似包名与消息里的包名不误归属', () => fixture(async library => {
   const file = await upload(library, 'all.log', line('test.app', 'ok') + line('test.app:worker', 'child') + line('test.app2', 'other') + '10-16 00:01:02.003 11 12 I C00123 Work: mentions test.app\n');
@@ -51,7 +54,8 @@ test('无字典保留二进制HiLog，补入同目录字典后可重试；不会
   const retried = await library.retryPackage(packed.id, A); assert.equal(retried.parsingStatus, 'complete'); assert.equal(retried.files.length, 1);
   const third = await library.retryPackage(packed.id, A); assert.equal(third.files[0].id, retried.files[0].id);
   await upload(library, 'hilog_dict.new.zip', zipFixture([['dict', 'new-value']]), { groupId: packed.groupId });
-  const refreshed = await library.retryPackage(packed.id, A); assert.notEqual(refreshed.files[0].id, third.files[0].id); assert.equal((await library.trash(0, 20, A)).total, 1);
+  const previousSource = await library.source(third.files[0].id, A);
+  const refreshed = await library.retryPackage(packed.id, A); assert.notEqual(refreshed.files[0].id, third.files[0].id); assert.equal((await library.trash(0, 20, A)).total, 0); await assert.rejects(readFile(previousSource.path), /ENOENT/);
 }, { runHilogTool: async (tool, args, signal, cwd) => { const output = join(cwd, args[args.indexOf('-o') + 1]); await mkdir(output, { recursive: true }); await writeFile(join(output, 'decoded.log'), line('test.app', 'decoded')); return '200'; } }));
 test('ZIP路径穿越、链接、同名覆盖及坏包被拒绝，原包仍可取回', () => fixture(async library => {
   for (const [name, source] of [['escape.zip', zipFixture([['../escape.log', 'x']])], ['link.zip', zipFixture([['link.log', 'x', 0xa1ff0000]])], ['duplicate.zip', zipFixture([['a.log', 'a'], ['a.log', 'b']])], ['bad.zip', Buffer.from('not zip')]]) {
@@ -104,4 +108,11 @@ test('explicit text encoding is validated and retry can change it without touchi
 test('GB18030 after a long ASCII prefix is detected from the whole GZ payload',()=>fixture(async library=>{
  const bytes=Buffer.concat([Buffer.from('prefix\n'.repeat(12000)),Buffer.from([0xd6,0xd0,0xce,0xc4,10])]);
  const packed=await upload(library,'late-gbk.gz',gzipSync(bytes));assert.equal(packed.parsingStatus,'complete');assert.equal(packed.files[0].encoding,'gb18030');assert.equal((await library.getLogs(packed.files[0].id,{offset:12000},A)).entries[0].message,'中文');
+}));
+
+test('larger text and archive admission uses 1 GiB / 2 GiB boundaries without allocating oversized payloads',()=>fixture(async library=>{
+ assert.equal(TEXT_BYTES,1024**3);assert.equal(PACKAGE_BYTES,2*1024**3);assert.equal(EXPANDED_BYTES,8*1024**3);
+ for(const [name,size] of [['large.log',TEXT_BYTES],['large.zip',PACKAGE_BYTES],['large.gz',PACKAGE_BYTES],['large.rar',PACKAGE_BYTES]]){const upload=await library.begin({name,size},A);assert.equal(upload.size,size);await library.abort(upload.id,A);}
+ await assert.rejects(library.begin({name:'overflow.log',size:TEXT_BYTES+1},A),/1 GiB/);
+ await assert.rejects(library.begin({name:'overflow.zip',size:PACKAGE_BYTES+1},A),/2 GiB/);
 }));

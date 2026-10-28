@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createLogLibrary } from '../src/log-library.mjs';
 import { registerRoutes, mutationBody } from '../src/index.mjs';
 import { appendLogDraft, logAnalysisPrompt, importLogFile } from '../src/log-client.mjs';
+import { legacyTrashFixture } from './legacy-trash-fixture.mjs';
 const A = { sessionId: 'session-A' }, B = { sessionId: 'session-B' };
 const sample = '10-14 01:02:03.004 61 62 E C04707 Work: 发生错误\r\n\r\n原文\n10-14 01:02:04.000 61 62 I C04707 Work: 恢复\n';
 async function fixture(fn) { const root = await mkdtemp(join(tmpdir(), 'dsh-session-logs-')); const library = createLogLibrary(root); try { await fn(library, root); } finally { await library.dispose(); await rm(root, { recursive: true, force: true }); } }
@@ -26,23 +27,27 @@ test('原始字节与SHA256完整保留；空行后的稳定源行号可用于AI
   assert.deepEqual(logs.entries.map(row => row.sourceLine), [3, 4]); assert.equal(logs.entries[0].message, '原文');
   await assert.rejects(library.getLogs(file.id, { lineFrom: 8, lineUntil: 2 }, A), /行号/);
 }));
-test('跨页全选冻结ID集合，排除单文件及之后的新导入；撤销不会触及其他会话', () => fixture(async library => {
+test('跨页全选冻结ID集合，永久删除排除单文件及之后的新导入，不触及其他会话', () => fixture(async (library, root) => {
   const records = []; for (let i = 0; i < 23; i++) records.push(await upload(library, A, 'file-' + i + '.log'));
   const foreign = await upload(library, B), selection = await library.select({}, A); assert.equal(selection.count, 23);
   const later = await upload(library, A, 'later.log');
   await assert.rejects(library.remove({ token: selection.token }, B), /会话/);
   const removed = await library.remove({ token: selection.token, exclude: [records[0].id] }, A); assert.equal(removed.removed, 22);
   assert.equal((await library.list(0, 100, A)).total, 2); assert.ok((await library.info(later.id, A)).id);
-  await assert.rejects(library.source(records[1].id, A)); await assert.rejects(library.restore(removed.batchId, B));
-  const restored = await library.restore(removed.batchId, A); assert.equal(restored.restored, 22); assert.equal((await library.list(0, 100, A)).total, 24); assert.equal((await library.info(foreign.id, B)).id, foreign.id);
+  await assert.rejects(library.source(records[1].id, A)); assert.equal(removed.permanent, true); assert.equal(removed.batchId, undefined);
+  const bucket = createHash('sha256').update(A.sessionId).digest('hex');
+  await assert.rejects(readFile(join(root, 'log-library', 'sessions', bucket, records[1].id, 'source.log')), /ENOENT/);
+  await assert.rejects(readdir(join(root, 'log-library', 'trash')), /ENOENT/);
+  assert.equal((await library.trash(0, 20, A)).total, 0); assert.equal((await library.info(foreign.id, B)).id, foreign.id);
   await assert.rejects(library.remove({ token: selection.token }, A), /过期/);
 }));
-test('改名只更新展示元数据；来源、名称和大小排序一致，回收区可单份恢复', () => fixture(async library => {
+test('改名只更新展示元数据；旧版本已有回收记录默认保留且兼容单份恢复', () => fixture(async (library, root) => {
   const one = await upload(library, A, 'Z.log'), two = await upload(library, A, 'A.log', sample, { sourceKind: 'realtime', snapshot: { bundle: 'test.app', evicted: 7, dropped: 3 } });
   await library.rename(one.id, 'B.log', A); assert.equal((await library.list(0, 20, A, { sort: 'name' })).files[0].id, two.id);
   assert.equal((await library.list(0, 20, A, { sourceKind: 'realtime' })).total, 1); assert.deepEqual(await readFile((await library.source(one.id, A)).path), Buffer.from(sample));
   await assert.rejects(library.rename(one.id, '../oops', A), /名称/);
-  const removed = await library.remove({ ids: [one.id, two.id] }, A); assert.equal((await library.trash(0, 20, A)).total, 2);
+  const removed = await legacyTrashFixture(root, A, [one.id, two.id]); assert.equal((await library.trash(0, 20, A)).total, 2);
+  const restarted = createLogLibrary(root); try { assert.equal((await restarted.list(0, 20, A)).total, 0); assert.equal((await restarted.trash(0, 20, A)).total, 2); } finally { await restarted.dispose(); }
   const usage = await library.usage(A); assert.equal(usage.files, 0); assert.equal(usage.trashFiles, 2); assert.ok(usage.trashBytes > Buffer.byteLength(sample) * 2);
   await library.restore(removed.batchId, A, [one.id]); assert.equal((await library.trash(0, 20, A)).total, 1); assert.equal((await library.list(0, 20, A)).total, 1);
   assert.match((await library.getLogs(two.id, {}, A).catch(e => ({ error: e.message }))).error, /没有/);
@@ -74,8 +79,8 @@ test('分析草稿保留已有文字，拒绝覆盖引用或正在提交的内�
   let draft, sends = 0; const input = { state: { getSnapshot: () => ({ phase: 'plain', draft: '已有问题', occurrences: [] }) }, setDraft(text) { draft = text; }, submit() { sends++; } };
   appendLogDraft(input, '日志分析'); assert.equal(draft, '已有问题\n\n日志分析'); assert.equal(sends, 0);
   input.state.getSnapshot = () => ({ phase: 'plain', draft: '文件引用', occurrences: [{}] }); assert.throws(() => appendLogDraft(input, '覆盖'), /引用/); assert.equal(draft, '已有问题\n\n日志分析');
-  const prompt = logAnalysisPrompt({ id: 'file', name: 'test.log' }, { sourceLine: 50, raw: 'unknown' }, { query: 'error' }); assert.match(prompt, /原文件行号：50/); assert.match(prompt, /日志内容：unknown/); assert.match(prompt, /只分析日志/); assert.match(prompt, /现象 \/ Bug 描述：\n其它补充：$/); assert.doesNotMatch(prompt, /e2e_phone|get_file_logs|"operation"|筛选范围/);
-  const filePrompt = logAnalysisPrompt({ id: 'file', name: 'test.log', sourceKind: 'realtime' }, undefined, { tag: 'Network', regex: true, query: '' }); assert.match(filePrompt, /来源：实时保存/); assert.match(filePrompt, /筛选范围：TAG=Network，正则=开启/); assert.doesNotMatch(filePrompt, /e2e_phone|get_file_logs|"operation"/);
+  const prompt = logAnalysisPrompt({ id: 'file', name: 'test.log' }, { sourceLine: 50, raw: 'unknown' }, { query: 'error' }); assert.match(prompt, /原文件行号：50/); assert.match(prompt, /日志内容：unknown/); assert.match(prompt, /只分析日志/); assert.match(prompt, /问题：$/); assert.doesNotMatch(prompt, /e2e_phone|get_file_logs|"operation"|筛选范围/);
+  const filePrompt = logAnalysisPrompt({ id: 'file', name: 'test.log', sourceKind: 'realtime' }, undefined, { tag: 'Network', regex: true, query: '' }); assert.match(filePrompt, /筛选范围：TAG=Network，正则=开启/); assert.doesNotMatch(filePrompt, /e2e_phone|get_file_logs|"operation"/);
 });
 test('浏览器分块导入失败会取消原上传，新的重试可完整写入且只绑定指定会话', () => fixture(async library => {
   const previous = globalThis.fetch; let broken = true, aborts = 0;

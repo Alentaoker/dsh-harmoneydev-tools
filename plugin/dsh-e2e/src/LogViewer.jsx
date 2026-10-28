@@ -1,3 +1,11 @@
+function SourceMatch({ text, ranges = [] }) {
+  text = String(text || ''); const parts = []; let start = 0;
+  for (const [from, until] of ranges.slice(0, 200)) {
+    if (!Number.isSafeInteger(from) || !Number.isSafeInteger(until) || from < start || until < from || from > text.length) continue;
+    parts.push(text.slice(start, from), <mark className="source-selected-match" key={from}>{text.slice(from, Math.min(until, text.length)) || '\u200b'}</mark>); start = Math.min(until, text.length);
+  }
+  parts.push(text.slice(start)); return <>{parts}</>;
+}
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { compilePattern, regexHelp } from './log-query.mjs';
 import { LogApplicationFilter } from './LogApplicationFilter.jsx';
@@ -14,8 +22,8 @@ function Highlight({ text, pattern }) {
   parts.push(text.slice(start)); return parts;
 }
 
-export function LogViewer({ url, exportUrl, visible = true, live = false, initialWindow, refreshKey = 0, timeBasis = '本机采集时间', onAnalyze, sessionId, focusSourceLine }) {
-  const saved = viewerCache.get(url);
+export function LogViewer({ url, exportUrl, visible = true, live = false, initialWindow, refreshKey = 0, timeBasis = '本机采集时间', onAnalyze, sessionId, focusSourceLine, focusSourceMatch }) {
+  const saved = focusSourceLine ? undefined : viewerCache.get(url);
   const [filters, setFilters] = useState(saved?.filters || { bundle: '', query: '', tag: '', domain: '', pid: '', tid: '', level: '', regex: false, caseSensitive: false, from: initialWindow?.from || '', until: initialWindow?.until || '' });
   const [debounced, setDebounced] = useState(filters), [offset, setOffset] = useState(saved?.offset || 0), [history, setHistory] = useState([]), [page, setPage] = useState(), [error, setError] = useState('');
   const [findOpen, setFindOpen] = useState(false), [find, setFind] = useState(''), [findCase, setFindCase] = useState(false), [findRegex, setFindRegex] = useState(false), [cursor, setCursor] = useState(0);
@@ -51,6 +59,24 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
     }
     setPage(undefined); refresh(); return () => { alive = false; controller.abort(); clearTimeout(timer); };
   }, [url, visible, live, debounced, offset, refreshKey, pageSize]);
+  useEffect(() => {
+    if (!visible || !page || !focusSourceLine) return;
+    const index = page.entries.findIndex(row => row.sourceLine === focusSourceLine);
+    if (index < 0) return;
+    const top = index * rowHeight; setScrollTop(top); if (viewport.current) viewport.current.scrollTop = top;
+    void readFull(index);
+  }, [page, visible, focusSourceLine, focusSourceMatch?.column]);
+  useEffect(() => {
+    if (fullRow?.sourceLine !== focusSourceLine || !focusSourceMatch?.ranges?.length) return;
+    const timer = setTimeout(() => {
+      const mark = root.current?.querySelector('.source-selected-match');
+      if (!mark) return;
+      const range = document.createRange(); range.selectNodeContents(mark);
+      const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+      mark.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fullRow, focusSourceLine, focusSourceMatch]);
   useEffect(() => {
     function key(event) { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && root.current?.contains(document.activeElement)) { event.preventDefault(); setFindOpen(true); requestAnimationFrame(() => findInput.current?.focus()); } }
     document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);
@@ -110,7 +136,7 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
     if (action === 'apply') { event.preventDefault(); event.stopPropagation(); const entry = findHistory.entries[findCursor]; if (entry) applyFindHistory(entry); setFindHistoryOpen(false); setFindSelected(false); return; }
     if (event.key === 'Enter') { if (matches.length) { event.preventDefault(); move(event.shiftKey ? -1 : 1); } if (!findError && find.trim()) findHistory.record(find, findRegex, findCase); }
   };
-  return <section className="log-viewer" ref={root} tabIndex={0} aria-label="日志查看器，Ctrl+F 查找本页" style={{ '--log-row-height': rowHeight + 'px' }}>
+  return <section className={'log-viewer' + (focusSourceLine ? ' source-jump-view' : '')} ref={root} tabIndex={0} aria-label="日志查看器，Ctrl+F 查找本页" style={{ '--log-row-height': rowHeight + 'px' }}>
     <div className="log-primary-tools">
       <LogApplicationFilter sessionId={sessionId || new URL(url, globalThis.location?.href || 'http://localhost').searchParams.get('sessionId')} applications={page?.applications || []} value={filters.bundle || ''} onChange={value => change('bundle', value)}/>
       <div className="log-search-anchor" data-history-anchor="filter" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setQueryHistoryOpen(false); }}>
@@ -166,7 +192,7 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
           {end < page.entries.length && <tr aria-hidden="true" className="log-spacer"><td colSpan={visibleColumns.length} style={{ height: (page.entries.length - end) * rowHeight }}/></tr>}
         </>; })()}
       </tbody></table>{!page.entries.length && <div className="empty">没有符合过滤的日志。请检查时间范围及采集状态。</div>}</div>
-      {fullRow && <div className="box offline-log-detail" style={{ height: detailHeight }}><div className="offline-detail-resize" role="separator" aria-label="调整离线日志详情高度" aria-orientation="horizontal" tabIndex={0} onDoubleClick={() => setDetailHeight(220)} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.dataset.y = String(e.clientY); e.currentTarget.dataset.height = String(detailHeight); }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setDetailHeight(Math.max(100, Math.min(window.innerHeight * .65, Number(e.currentTarget.dataset.height) + Number(e.currentTarget.dataset.y) - e.clientY))); }} onKeyDown={e => { if (['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); setDetailHeight(h => Math.max(100, Math.min(window.innerHeight * .65, h + (e.key === 'ArrowUp' ? 24 : -24)))); } }}/><div className="row spread"><strong>{fullRow.tag} · {fullRow.sourceLine ? `原文件第 ${fullRow.sourceLine} 行` : '单条原记录'}</strong><div className="row">{onAnalyze && <button onClick={() => onAnalyze(fullRow, debounced)}>AI 分析此行</button>}<button onClick={() => navigator.clipboard.writeText(fullRow.raw || fullRow.message).catch(() => setError('复制失败，请选择正文后复制'))}>复制完整行</button><button onClick={() => setFullRow(undefined)}>关闭</button></div></div><pre>{fullRow.raw || fullRow.message}</pre>{fullRow.messageTruncated && <p className="muted">单条读取仍限制 8192 字符，更长内容请查看原始文件。</p>}</div>}
+      {fullRow && <div className="box offline-log-detail" style={{ height: detailHeight }}><div className="offline-detail-resize" role="separator" aria-label="调整离线日志详情高度" aria-orientation="horizontal" tabIndex={0} onDoubleClick={() => setDetailHeight(220)} onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.dataset.y = String(e.clientY); e.currentTarget.dataset.height = String(detailHeight); }} onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setDetailHeight(Math.max(100, Math.min(window.innerHeight * .65, Number(e.currentTarget.dataset.height) + Number(e.currentTarget.dataset.y) - e.clientY))); }} onKeyDown={e => { if (['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); setDetailHeight(h => Math.max(100, Math.min(window.innerHeight * .65, h + (e.key === 'ArrowUp' ? 24 : -24)))); } }}/><div className="row spread"><strong>{fullRow.tag} · {fullRow.sourceLine ? `原文件第 ${fullRow.sourceLine} 行` : '单条原记录'}</strong><div className="row">{onAnalyze && <button onClick={() => onAnalyze(fullRow, debounced)}>此行加入对话</button>}<button onClick={() => navigator.clipboard.writeText(fullRow.raw || fullRow.message).catch(() => setError('复制失败，请选择正文后复制'))}>复制完整行</button><button onClick={() => setFullRow(undefined)}>关闭</button></div></div><pre>{fullRow.sourceLine === focusSourceLine && focusSourceMatch ? <SourceMatch text={fullRow.raw || fullRow.message} ranges={focusSourceMatch.ranges}/> : fullRow.raw || fullRow.message}</pre>{fullRow.messageTruncated && <p className="muted">单条读取仍限制 8192 字符，更长内容请查看原始文件。</p>}</div>}
 
     </>}
   </section>;

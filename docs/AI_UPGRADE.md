@@ -1,22 +1,22 @@
 # AI 升级指南
 
-目标：**dshHarmony 0.5.0-rc.9 + dshVerify 0.5.0-rc.2**，精确 tag：`v0.5.0-rc.9-e2e-0.5.0-rc.2`，仍为 RC 预发布。适用于 Windows x64、DSH **0.2.0-rc.2**、真实 Node.js **24**。其它系统/宿主版本先单独适配，不升级宿主或添加兼容豁免。
+目标：**dshHarmony 0.5.0-rc.10 + dshVerify 0.5.0-rc.3**，精确 tag：`v0.5.0-rc.10-e2e-0.5.0-rc.3`，仍为 RC 预发布。适用于 Windows x64、DSH **0.2.0-rc.2**、真实 Node.js **24**。其它系统/宿主版本先单独适配，不升级宿主或添加兼容豁免。
 
-[本次公开发布页](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.9-e2e-0.5.0-rc.2) · [完整安装参数](AI_INSTALLATION.md) · [本次交付与待验范围](RELEASE_ACCEPTANCE_20261020.md)
+[本次公开发布页](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.5.0-rc.10-e2e-0.5.0-rc.3) · [完整安装参数](AI_INSTALLATION.md) · [本次交付与待验范围](LOG_FIRST_ACCEPTANCE_20261028.md)
 
 ## 交给另一台电脑的 AI
 
-> 请将这台电脑的 DSH 两个插件配套升级至 v0.5.0-rc.9-e2e-0.5.0-rc.2。从 Alentaoker/dsh-harmoneydev-tools 该 Release 下载 windows-source.zip 与同名 .sha256，校验后读取包内 docs/AI_UPGRADE.md 和 docs/AI_INSTALLATION.md。先发现本机 EXE、CLI、真实 Node24/npm、原 DSH_HOME、目标 profile 与旧来源；备份登记和日志库并保留旧来源。使用新的长期目录，PlanOnly 通过且完整退出相关宿主后安装，按 Harmony → Verify 构建并用正式 CLI 登记。desktop/web 各自处理，同环境冷启动。保留其它插件、模型、凭据、草稿、对话、验证记录和日志，不复制另一台电脑的 Data，不清理回收区来验收升级。分别报告构建、登记、运行和设备待验项，失败按指南回退。
+> 请将这台电脑的 DSH 两个插件配套升级至 v0.5.0-rc.10-e2e-0.5.0-rc.3。从 Alentaoker/dsh-harmoneydev-tools 该 Release 下载 windows-source.zip 与同名 .sha256，校验后读取包内 docs/AI_UPGRADE.md 和 docs/AI_INSTALLATION.md。先发现本机 EXE、CLI、真实 Node24/npm、原 DSH_HOME、目标 profile 与旧来源；备份登记和日志库并保留旧来源。使用新的长期目录，PlanOnly 通过且完整退出相关宿主后安装，按 Harmony → Verify 构建并用正式 CLI 登记。desktop/web 各自处理，同环境冷启动。保留其它插件、模型、凭据、草稿、对话、验证记录和日志，不复制另一台电脑的 Data，不删除既有日志来验收升级。分别报告构建、登记、运行和设备待验项，失败按指南回退。
 
 ## 本次改变与数据兼容
 
-上一版为 `v0.5.0-rc.8-e2e-0.5.0-rc.1`。本次修复会话日志高度链，新增「会话日志 → 全部会话管理」和实时/未打开会话名称兼容。安装标识 `dsh-e2e`、存储 `dshE2E`、API 路径、日志协议 2 保持不变，不需要搬迁数据。
+上一版为 `v0.5.0-rc.9-e2e-0.5.0-rc.2`。本次默认会话日志，开发验证收在更多工具；「AI」改「加入对话」并简化草稿；日志直接永久删除副本；扩容导入并重做Notepad++式跨文件查找。安装标识 `dsh-e2e`、存储 `dshE2E`、API 路径、日志协议 2 保持不变，不需要搬迁数据。
 
-普通日志列表、正文、下载、导出、跨文件筛选仍限当前会话。新增 management 专用入口只提供跨会话摘要与明确选定的清理操作；不删除对话、验证/采集记录、截图录像、未归属旧日志和用户原文件。手动媒体继续跨会话保留。
+普通日志列表、正文、下载、导出、跨文件筛选仍限当前会话。management 专用入口只提供跨会话摘要与明确选定的永久删除操作；不删除对话、验证/采集记录、截图录像、未归属旧日志和用户原文件。手动媒体继续跨会话保留。
 
 前版已移除第三方 E2E 框架；使用 `save_task/begin_validation/record_checkpoint/finish_validation` 等当前接口，旧 `run/replay/retry` 已退役，不用于当前验收。
 
-导入容量未调整：明文 256 MiB、压缩包 512 MiB、累计展开 2 GiB、10000 条目。60 MB 压缩包也可能展开超过上限，本次不声明此类报错已修复。前版原厂视频静止页冷启动、转屏/USB 拔插等待验边界没有因日志补丁消失。
+导入容量提升为明文1GiB、压缩包2GiB、累计展开8GiB、10000条目。压缩体积与展开体积独立，60MB压缩包仍可能展开超过8GiB。上限边界已测试，未实际执行满1/2/8GiB载荷。前版原厂视频静止页冷启动、转屏/USB 拔插等待验边界没有因日志补丁消失。
 
 ## 1. 在目标电脑确认现状
 
@@ -29,13 +29,13 @@
 
 下载这两个同名资产，不能用旧 hash 验新包：
 
-- `dsh-harmony-0.5.0-rc.9-e2e-0.5.0-rc.2-windows-source.zip`
-- `dsh-harmony-0.5.0-rc.9-e2e-0.5.0-rc.2-windows-source.zip.sha256`
+- `dsh-harmony-0.5.0-rc.10-e2e-0.5.0-rc.3-windows-source.zip`
+- `dsh-harmony-0.5.0-rc.10-e2e-0.5.0-rc.3-windows-source.zip.sha256`
 
 在下载目录执行：
 
 ```powershell
-$upgradeArchive = Join-Path (Get-Location) 'dsh-harmony-0.5.0-rc.9-e2e-0.5.0-rc.2-windows-source.zip'
+$upgradeArchive = Join-Path (Get-Location) 'dsh-harmony-0.5.0-rc.10-e2e-0.5.0-rc.3-windows-source.zip'
 $upgradeExpectedHash = ((Get-Content -LiteralPath ($upgradeArchive + '.sha256') -Raw).Trim() -split '\s+')[0]
 if ($upgradeExpectedHash -notmatch '^[a-fA-F0-9]{64}$' -or
     (Get-FileHash -LiteralPath $upgradeArchive -Algorithm SHA256).Hash -ne $upgradeExpectedHash) {
@@ -62,7 +62,7 @@ $upgradeNpm = '实际的\npm\bin\npm-cli.js'
   -DshProfile desktop -NodeExe $upgradeNode -NpmCli $upgradeNpm -PlanOnly
 ```
 
-非标准布局可用 `-DshCli '实际的\dsh.cmd'` 替换 DshExe。PlanOnly 不安装、不构建、不写 profile；核对宿主精确版本、Node24、包版本、manifest、原生资源与 `pairedSources: 26`。失败先纠正来源/路径，不改兼容限制。
+非标准布局可用 `-DshCli '实际的\dsh.cmd'` 替换 DshExe。PlanOnly 不安装、不构建、不写 profile；核对宿主精确版本、Node24、包版本、manifest、原生资源与 `pairedSources: 28`。失败先纠正来源/路径，不改兼容限制。
 
 ## 4. 安装与双 profile 登记
 
@@ -85,16 +85,17 @@ $upgradeNpm = '实际的\npm\bin\npm-cli.js'
 
 - **登记与运行**：verify-install 的版本/来源/bundle 正确，冷启动无 fatal load failure；使用的 desktop/web 分别报告。工具名出现不能代替行为证据。
 - **原内容与布局**：草稿、原对话和日志保留；会话日志填满剩余高度；当前会话正文/跨文件筛选与隔离保留。
-- **统一管理**：列出有暂存或回收内容的会话，检查名称/ID 搜索、估算占用、分页和多选。没有可选标题服务时退回 ID，不启动模型或读取消息正文生成名称。
-- **清理交互**：只预览所选数量后取消。移入回收区不释放磁盘，可恢复；永久清空核对范围后直接点击按钮，无需输入确认文字。升级不需要删除真实日志，破坏性测试用临时根。
-- **范围与部分失败**：一次最多 200 会话/10000 文件，令牌 10 分钟单次有效；后来新增文件不加入既定范围。导入/解析中会话跳过并逐项提示，部分失败不能报告全部成功。
+- **统一管理**：列出有日志或旧版删除残留的会话，检查名称/ID 搜索、估算占用、分页和多选。没有可选标题服务时退回 ID，不启动模型或读取消息正文生成名称。
+- **清理交互**：删除直接永久移除插件副本，没有回收入口、输入确认或撤销。单份与统一管理都检查选择范围；升级不会自动清理旧回收内容。升级验收不点击删除用户既有日志，执行测试只用隔离的可丢弃副本。
+- **范围与部分失败**：一次最多200会话/10000文件；服务端在该次请求内冻结具体文件集合并消费一次性令牌，后来新增文件不加入本次删除。导入/解析中会话跳过并逐项提示，部分失败不能报告全部成功。
+- **跨文件交互**：当前会话多文件普通/扩展/正则查找，计数区分行数与出现次数；F4/Shift+F4、Enter/双击定位、完整复制、完整条件历史和短屏布局。JavaScript/Boost语法差异、30秒、长行/跨行/复制预算见日志指南，不声明与Notepad++完全等同。
 - **设备与 AI**：离线阅读不需要手机/模型；HDC、投屏、10 万行性能、批注附件与验证控制释放另行按授权验收。缺设备不能用模拟数据冒充真实通过。
 
 ## 6. 失败恢复与回退
 
 构建失败且未登记时原 profile 保留。部分登记失败时保持宿主退出，通过同一 CLI 将两个插件分别 `plugin --profile <profile> add <旧来源绝对目录>`，增量核对原 bundle/composition；不覆盖其它插件或整个 profile。已使用的 desktop/web 分别恢复，再同数据目录冷启动。
 
-回退不复制整个旧 Data 覆盖升级后新增内容。rc.8/Verify rc.1 没有统一管理页，但沿用会话存储，可在对应会话回收区恢复。永久清空的数据不会因回退插件恢复。更早 JSONL 版本不理解 blocks-v1，需要对应备份或重新导入原文，不能宣称只回退插件即兼容全部数据。
+回退不复制整个旧Data覆盖升级后新增内容。rc.9/Verify rc.2可读取相同会话存储与旧回收记录，但无法恢复新版已经永久删除的副本。删除前需要保留内容时应先下载原文件或备份；回退插件不是数据恢复。更早 JSONL 版本不理解 blocks-v1，需要对应备份或重新导入原文，不能宣称只回退插件即兼容全部数据。
 
 记录失败阶段、退出码、来源、备份与回退实际结果，不公开认证 URL、日志、媒体或配置。404/旧界面先查来源/profile与完整重启，不删 Data；401/403 正常认证，不关闭门禁。
 

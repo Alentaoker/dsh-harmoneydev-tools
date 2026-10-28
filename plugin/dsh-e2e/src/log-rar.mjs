@@ -38,7 +38,7 @@ export function parseRarListing(text, safePath, budget, maximum, totalMaximum, m
     if (item.Folder === '+' || /^D/.test(item.Attributes || '')) continue;
     const size = Number(item.Size);
     if (!Number.isSafeInteger(size) || size < 0 || size > maximum(name)) throw Error('RAR 单份展开内容超过限制');
-    total += size; if (budget.bytes + total > totalMaximum) throw Error('RAR 累计展开内容超过 2 GiB');
+    total += size; if (budget.bytes + total > totalMaximum) throw Error(`RAR 累计展开内容超过 ${totalMaximum / 1024 ** 3} GiB`);
     if (/\.(txt|log|jsonl|json|gz)$/i.test(name) || /^hilog_dict[^/\\]*\.zip$/i.test(name.split('/').at(-1))) values.push({ original, name, target, size });
   }
   return values;

@@ -66,7 +66,7 @@ test('离线日志按会话隔离、无需模型，分块导入保留原始UTF-8
     assert.equal(page.total, 3); assert.equal(page.filteredTotal, 1); assert.equal(page.entries[0].message, '发生错误');
     const raw = await library.source(completed.id, scope); assert.deepEqual(await readFile(raw.path), source);
     let exported = ''; for await (const chunk of await library.export(completed.id, { level: 'error' }, scope)) exported += chunk.toString(); assert.equal(exported.trim().split('\n').length, 1); assert.equal(JSON.parse(exported).message, '发生错误');
-    await assert.rejects(library.begin({ name: 'big.log', size: 256 * 1024 * 1024 + 1 }, scope), /256 MiB/);
+    await assert.rejects(library.begin({ name: 'big.log', size: 1024 ** 3 + 1 }, scope), /1 GiB/);
     assert.equal(parseImportedLog('{"tag":"App","message":"api_key=private-value"}').message, 'api_key=[redacted]');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

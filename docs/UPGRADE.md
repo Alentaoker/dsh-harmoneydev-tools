@@ -2,7 +2,7 @@
 
 以 [AI 安装指南](AI_INSTALLATION.md) 为完整操作顺序。这里补充本次数据格式与版本边界。
 
-本次配套 Harmony **0.5.0-rc.9** / dshVerify **0.5.0-rc.2**，上一版为 rc.8 / Verify rc.1。新增全部会话日志管理、全高日志布局与实时/历史会话名称兼容；安装标识、storage、日志协议 2 不变，无需迁移用户数据。见 [本次交付](RELEASE_ACCEPTANCE_20261020.md)、[AI 升级指南](AI_UPGRADE.md)。以下旧版本小节仅作历史记录，旧 run/replay/retry 执行契约已经退役，不用于当前升级验收。
+本次配套 Harmony **0.5.0-rc.10** / dshVerify **0.5.0-rc.3**，上一版为 rc.9 / Verify rc.2。默认日志、加入对话、直接永久删除插件副本、1/2/8GiB容量与Notepad++式跨文件查找；安装标识、storage、日志协议 2 不变，无需迁移用户数据。见 [本次交付](LOG_FIRST_ACCEPTANCE_20261028.md)、[AI 升级指南](AI_UPGRADE.md)。旧回收记录升级保留，新删除没有回收与撤销。以下旧版本小节仅作历史记录，旧 run/replay/retry 执行契约已经退役，不用于当前升级验收。
 
 ## 0.1.2 → 0.2.0
 

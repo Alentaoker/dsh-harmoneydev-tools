@@ -70,10 +70,12 @@ function TestForm({source,onClose,onDraft}) {
 }
 export function apply(ctx) {
   const id='dsh-e2e',kind='dshE2E';
-  ctx.effect(()=>ctx.sidebarRightTabs.register({id,kind,title:()=>'dshVerify',guide:[{id:kind,order:6,title:()=>'dshVerify',description:()=>'鸿蒙开发验证：开发任务、安装交接、验证记录与证据'}]}),'dshE2E: tab');
+  ctx.effect(()=>ctx.sidebarRightTabs.register({id,kind,title:()=>'dshVerify',guide:[{id:kind,order:6,title:()=>'dshVerify',description:()=>'日志工作台：导入、搜索、加入对话与清理；开发验证收纳在更多工具'}]}),'dshE2E: tab');
   function Panel(props) {
     const info=props.useTabInfo?.(),visible=info?.tab?.visible!==false,sessionId=props.sessionId;
-    const [workbench,setWorkbench]=useState(false),[openFileId,setOpenFileId]=useState();
+    const [validationSession,setValidationSession]=useState(),[openFileId,setOpenFileId]=useState();
+    const workbench=!sessionId||validationSession!==sessionId;
+    const setWorkbench=value=>setValidationSession(value?undefined:sessionId);
     useEffect(()=>{const target=sessionStorage.getItem('dshE2E:open-log:'+sessionId);if(target){setOpenFileId(target === '__workbench__' ? undefined : target);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}else setOpenFileId(undefined);
       const open=event=>{if(event.detail?.sessionId===sessionId){setOpenFileId(event.detail.id);setWorkbench(true);sessionStorage.removeItem('dshE2E:open-log:'+sessionId);}};window.addEventListener('dshE2E:open-logs',open);return()=>window.removeEventListener('dshE2E:open-logs',open);
     },[sessionId]);
@@ -84,7 +86,7 @@ export function apply(ctx) {
     const search=useDebounced(query);
     const base=new URLSearchParams({sessionId:sessionId||'',scope:scope==='all'?'all':'session'}).toString();
     const endpoint=(path,params={})=>'/api/dsh-e2e/'+path+'?'+base+'&'+new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([,v])=>v!==undefined))).toString();
-    useEffect(()=>{setScope('session');setSelectedId(undefined);setSelected(undefined);setPage(undefined);setForm(null);setNotice('');setOffset(0);setQuery('');setFilter('');setArchived(false);},[sessionId]);
+    useEffect(()=>{setWorkbench(true);setScope('session');setSelectedId(undefined);setSelected(undefined);setPage(undefined);setForm(null);setNotice('');setOffset(0);setQuery('');setFilter('');setArchived(false);},[sessionId]);
     useEffect(()=>{setSelectedId(undefined);setSelected(undefined);setOffset(0);setForm(null);setNotice('');},[scope]);
     useEffect(()=>{setOffset(0);},[filter,search,archived]);
     useEffect(()=>{
@@ -117,7 +119,7 @@ export function apply(ctx) {
     const logStatus=logStatusLabels[view?.logCollection?.status]||'未确认';
     const logTargetName=view?.logCollection?.target?.label||view?.logCollection?.target?.bundleName||'未绑定目标应用';
     const logTotal=view?.logCollection?.total??'—';
-    if(workbench)return <div className="de2e log-workbench-shell"><div className="row spread heading"><h2>会话日志</h2><div className="row"><button onClick={()=>{sessionStorage.setItem('dshHarmony:open-logs:'+sessionId,'1');ctx.sidebarRight.openTabIn(sessionId,'dshHarmony');window.dispatchEvent(new CustomEvent('dshHarmony:open-logs',{detail:{sessionId}}));}}>实时日志</button><button onClick={()=>setWorkbench(false)}>开发验证</button></div></div><LogWorkbench visible={visible} sessionId={sessionId} openFileId={openFileId} onOpenFileConsumed={()=>setOpenFileId(undefined)} onDraft={text=>{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话');appendLogDraft(ctx.conversation.input.for(session),text);}}/></div>;
+    if(workbench)return <div className="de2e log-workbench-shell"><div className="row spread heading"><div><h2>dshVerify</h2><span className="muted">会话日志 · {pluginVersion}</span></div><div className="row"><button onClick={()=>{sessionStorage.setItem('dshHarmony:open-logs:'+sessionId,'1');ctx.sidebarRight.openTabIn(sessionId,'dshHarmony');window.dispatchEvent(new CustomEvent('dshHarmony:open-logs',{detail:{sessionId}}));}}>实时日志</button><details className="library-document-menu"><summary>更多工具</summary><div><button onClick={()=>setWorkbench(false)}>开发验证</button></div></details></div></div><LogWorkbench visible={visible} sessionId={sessionId} openFileId={openFileId} onOpenFileConsumed={()=>setOpenFileId(undefined)} onDraft={text=>{const session=sessionId&&ctx.sessions.scope(sessionId);if(!session)throw Error('请先打开一个会话');appendLogDraft(ctx.conversation.input.for(session),text);}}/></div>;
     return <div className="de2e">
       <div className="row spread heading"><div><h2>dshVerify</h2><div className="muted">鸿蒙开发验证 · {status?.version||pluginVersion}</div></div><div className="row"><button onClick={()=>setWorkbench(true)}>日志工作台</button><button onClick={()=>setTick(t=>t+1)} aria-label="刷新测试记录">刷新</button><button className="primary" disabled={!sessionId} onClick={()=>{setForm({});setSelectedId(undefined);}}>新建开发任务</button></div></div>
       {!sessionId?<div className="empty">打开一个会话后，可查看该会话的开发任务、安装交接、验证记录与证据。</div>:<>

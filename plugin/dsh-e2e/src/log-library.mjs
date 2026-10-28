@@ -1,3 +1,5 @@
+import { compileSessionSearch } from './session-search.mjs';
+import { importLimitLabel } from './log-limits.mjs';
 import { validateLogEncoding } from './log-encoding.mjs';
 import { mkdir, writeFile, appendFile, readFile, readdir, rm, stat, rename, cp, realpath, copyFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -76,7 +78,7 @@ export function createLogLibrary(root, options = {}) {
         const done = { ...clean(value), status: 'ready', count: 0, parsed: 0, unparsed: 0, storedBytes: value.size, availableAt: new Date().toISOString(), parsingContext: context, parsingStatus: imported.parsingStatus, importWarnings: imported.warnings, childIds: imported.children.map(f => f.id) };
         await saveMetadata(dir, done);
         const replaced = (value.childIds || []).filter(id => !done.childIds.includes(id) && existing.some(file => file.id === id && file.origin?.packageId === value.id));
-        if (replaced.length && imported.children.length) { const result = await library.remove({ ids: replaced }, scope); if (result.errors.length) { done.importWarnings.push('部分旧解析副本未移入回收区，可手动清理。'); await saveMetadata(dir, done); } }
+        if (replaced.length && imported.children.length) { const result = await library.remove({ ids: replaced }, scope, true); if (result.errors.length) { done.importWarnings.push('部分旧解析副本未删除，可手动清理。'); await saveMetadata(dir, done); } }
         return { ...done, files: imported.children };
       }
       const duplicate = (await files(scope)).find(file => file.name === value.name && file.sha256 === value.sha256 && file.storage === 'blocks-v1' && !value.origin && !file.origin && JSON.stringify(file.snapshot || {}) === JSON.stringify(value.snapshot || {}));
@@ -170,7 +172,6 @@ export function createLogLibrary(root, options = {}) {
       if ([...uploads.values()].some(v => v.sessionId === owner(scope) && v.groupId === id)) throw Error('此目录正在导入，请先取消或等待完成');
       const selection = await library.select({ groupId: id }, scope), result = await library.remove({ token: selection.token }, scope);
       if (!result.errors.length) await locked(scope, async () => { const values = await groups(scope); if (values[id]) { values[id].deletedAt = new Date().toISOString(); await writeFile(join(sessionDirectory(scope), 'groups.json.tmp'), JSON.stringify(values)); await rename(join(sessionDirectory(scope), 'groups.json.tmp'), join(sessionDirectory(scope), 'groups.json')); } });
-      if (!result.errors.length) await writeFile(join(base, 'trash', key(scope), result.batchId, 'group.json'), JSON.stringify({ id, sessionId: owner(scope) }));
       return result;
     },
     async preferences(scope, change) {
@@ -211,7 +212,7 @@ export function createLogLibrary(root, options = {}) {
       const sessionId = owner(scope), isPackage = !internal && sourceKind === 'import' && packageName(name);
       if (disposed) throw Error('日志库已经关闭');
       if (managementBusy.has(sessionId)) throw Error('此会话正在清理日志，请稍后导入');
-      if (typeof name !== 'string' || !name.trim() || name.length > 256 || !Number.isSafeInteger(size) || size < 1 || size > (isPackage ? PACKAGE_BYTES : TEXT_BYTES)) throw Error('明文每份最多 256 MiB，ZIP / GZ / RAR 每份最多 512 MiB');
+      if (typeof name !== 'string' || !name.trim() || name.length > 256 || !Number.isSafeInteger(size) || size < 1 || size > (isPackage ? PACKAGE_BYTES : TEXT_BYTES)) throw Error(importLimitLabel);
       if (!['import', 'realtime'].includes(sourceKind)) throw Error('日志来源无效');
       if (snapshot !== undefined && (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || JSON.stringify(snapshot).length > 3000)) throw Error('日志快照信息无效');
       if (!internal && uploads.size >= 2) throw Error('已有日志导入正在进行，请等待完成');
@@ -270,16 +271,18 @@ export function createLogLibrary(root, options = {}) {
     async usage(scope) { const ready = await files(scope), trash = await trashed(scope), bytes = values => values.reduce((sum, value) => sum + (value.storedBytes ?? value.size + (value.normalizedBytes || 0)), 0); let analysisCacheBytes = 0; for (const file of ready) analysisCacheBytes += (await stat(join(directory(file.id, scope), 'analysis.log')).catch(() => undefined))?.size || 0; return { files: ready.length, bytes: bytes(ready), analysisCacheBytes, trashFiles: trash.length, trashBytes: bytes(trash), instruction: '统计原始/压缩文件及正文块，分析缓存单列；不含索引、导入临时文件及文件系统开销' }; },
     async clearAnalysisCache(scope) { let removed = 0; for (const file of await files(scope)) { const path = join(directory(file.id, scope), 'analysis.log'); if (await stat(path).catch(() => undefined)) { await rm(await checked(path)); removed++; } } return { removed, errors: [] }; },
     async search(query, scope, signal) {
-      owner(scope); validatePage(query); compileLogQuery(query);
-      if (!String(query.query || '').trim()) throw Error('请输入跨文件筛选关键词');
-      const candidates = (await files(scope)).filter(file => !file.isPackage);
-      const ready = [];
+      owner(scope); validatePage(query); const matcher = compileSessionSearch(query);
+      const candidates = (await files(scope)).filter(file => !file.isPackage && matcher.acceptsFile(file.name)).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN', { numeric: true }) || a.id.localeCompare(b.id));
+      const ready = [], revision = createHash('sha256').update(matcher.key);
       for (const file of candidates) {
         signal?.throwIfAborted();
         const value = await indexedMetadata(file.id, scope, signal);
-        ready.push({ id: value.id, name: value.name, directory: await checked(directory(value.id, scope)) });
+        const fileDirectory = await checked(directory(value.id, scope));
+        const sourceInfo = await stat(join(fileDirectory, value.sourceCompression === 'gzip' ? 'source.log.gz' : 'source.log'));
+        revision.update(JSON.stringify([value.id, value.name, value.sha256, sourceInfo.size, sourceInfo.mtimeMs]));
+        ready.push({ id: value.id, name: value.name, directory: fileDirectory });
       }
-      return { ...await runWorker('search', { files: ready, options: query }, signal), sessionId: owner(scope) };
+      return { ...await runWorker('search', { files: ready, options: query }, signal), sessionId: owner(scope), searchRevision: revision.digest('hex') };
     },
     async getLogs(id, query, scope, signal) {
       const value = await indexedMetadata(id, scope, signal), dir = await checked(directory(id, scope));
@@ -302,8 +305,10 @@ export function createLogLibrary(root, options = {}) {
       const value = await metadata(id, scope), path = await checked(join(directory(id, scope), value.sourceCompression === 'gzip' ? 'source.log.gz' : 'source.log'));
       return { path, name: value.name, compressed: value.sourceCompression === 'gzip' };
     },
-    async remove({ ids, all = false, token, query = '', sourceKind = '', before, exclude = [] }, scope) {
+    async remove({ ids, all = false, token, query = '', sourceKind = '', before, exclude = [] }, scope, internalReplacement = false) {
       return locked(scope, async () => {
+        const sessionId = owner(scope);
+        if (!internalReplacement && ([...uploads.values()].some(file => file.sessionId === sessionId) || [...migrating.keys()].some(id => id.startsWith(sessionId + ':')))) throw Error('此会话正在导入、解析或建立索引，请稍后删除');
         const selection = token && selections.get(validId(token));
         if (token && (!selection || selection.sessionId !== owner(scope) || selection.until < Date.now())) throw Error('全选范围已过期或不属于当前会话，请重新选择');
         if (all && !before && !selection) throw Error('全选删除需要选择时的范围');
@@ -311,14 +316,12 @@ export function createLogLibrary(root, options = {}) {
         for (const id of exclude) validId(id);
         const excluded = new Set(exclude), targets = selection ? selection.ids.filter(id => !excluded.has(id)) : all ? (await files(scope, { query, sourceKind, before })).map(v => v.id).filter(id => !excluded.has(id)) : [...new Set(ids || [])];
         if (targets.length > 10000) throw Error('单次最多删除 10000 份日志');
-        // Validate every requested owner before moving any file.
+        // Validate every owner before deleting. Never touch caller source files.
         for (const id of targets) await metadata(id, scope);
-        const batchId = randomUUID(), trash = join(base, 'trash', key(scope), batchId);
-        await mkdir(trash, { recursive: true }); await checked(trash);
         const removed = [], errors = [];
-        for (const id of targets) { try { await rename(await checked(directory(id, scope)), join(trash, id)); removed.push(id); } catch (error) { errors.push({ id, error: error.message }); } }
+        for (const id of targets) { try { await rm(await checked(directory(id, scope)), { recursive: true }); removed.push(id); } catch (error) { errors.push({ id, error: error.message }); } }
         if (selection) selections.delete(token);
-        return { batchId, removed: removed.length, errors };
+        return { removed: removed.length, permanent: true, errors };
       });
     },
     async restore(batchId, scope, ids) {

@@ -8,12 +8,13 @@ import { join, dirname, resolve, isAbsolute } from 'node:path';
 export const requiredPairedSources = [
   'LogWorkbench.jsx',
   'LogViewer.jsx',
-  'LogTrash.jsx',
   'LogApplicationFilter.jsx',
   'LogSearchHistory.jsx',
   'SessionLogSearch.jsx',
   'LogSessionManager.jsx',
   'log-client.mjs',
+  'log-limits.mjs',
+  'session-search.mjs',
   'log-query.mjs',
   'log-search-menu.mjs',
   'presentation.mjs',
@@ -37,6 +38,7 @@ export const requiredServerSources = [
   'evidence.mjs',
   'records.mjs',
   'log-management.mjs',
+  'session-search-storage.mjs',
 ];
 
 const resolveExtensions = ['', '.mjs', '.jsx', '.js', '.json', '.css'];

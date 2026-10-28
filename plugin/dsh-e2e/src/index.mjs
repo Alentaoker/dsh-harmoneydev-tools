@@ -1,3 +1,4 @@
+import { TEXT_BYTES, PACKAGE_BYTES, EXPANDED_BYTES } from './log-limits.mjs';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
@@ -37,10 +38,11 @@ export function apply(ctx) {
 
 export function registerRoutes(ctx, service) {
   for (const [path, methods, handler] of [
-    ['/api/dsh-e2e/log-library/capabilities', ['GET'], request => ({ protocolVersion: 2, features: ['groups', 'packages', 'blocks', 'favorites', 'analysis-paths', 'rar', 'text-encodings', 'cross-file-search'], limits: { textBytes: 268435456, packageBytes: 536870912, expandedBytes: 2147483648, pageLines: 1000 }, sessionId: requestScope(request, true).sessionId, storage: 'session', plugin: 'dshE2E' })],
+    ['/api/dsh-e2e/log-library/capabilities', ['GET'], request => ({ protocolVersion: 2, features: ['groups', 'packages', 'blocks', 'favorites', 'analysis-paths', 'rar', 'text-encodings', 'cross-file-search', 'direct-delete'], limits: { textBytes: TEXT_BYTES, packageBytes: PACKAGE_BYTES, expandedBytes: EXPANDED_BYTES, pageLines: 1000 }, sessionId: requestScope(request, true).sessionId, storage: 'session', plugin: 'dshE2E' })],
     ['/api/dsh-e2e/log-library/management/sessions', ['GET'], request => { const p = new URL(request.url).searchParams; return service.logLibrary.management.sessions({ query: p.get('query') || '', offset: p.get('offset') || 0, limit: p.get('limit') || 50 }, requestScope(request, true)); }],
     ['/api/dsh-e2e/log-library/management/prepare', ['POST'], async request => service.logLibrary.management.prepare(await mutationBody(request, 64 * 1024), requestScope(request, true))],
     ['/api/dsh-e2e/log-library/management/execute', ['POST'], async request => service.logLibrary.management.execute(await mutationBody(request), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/management/delete', ['POST'], async request => { const body = await mutationBody(request, 64 * 1024), scope = requestScope(request, true); const plan = await service.logLibrary.management.prepare({ action: 'delete', sessionIds: body.sessionIds }, scope); return service.logLibrary.management.execute({ token: plan.token, confirm: true }, scope); }],
     ['/api/dsh-e2e/log-library/groups', ['GET'], request => service.logLibrary.groups(requestScope(request, true))],
     ['/api/dsh-e2e/log-library/delete-group', ['POST'], async request => service.logLibrary.deleteGroup((await mutationBody(request)).id, requestScope(request, true))],
     ['/api/dsh-e2e/log-library/create-group', ['POST'], async request => service.logLibrary.createGroup((await mutationBody(request)).name, requestScope(request, true))],
@@ -62,6 +64,7 @@ export function registerRoutes(ctx, service) {
     ['/api/dsh-e2e/log-library/rename', ['POST'], async request => { const body = await mutationBody(request); return service.logLibrary.rename(body.id, body.name, requestScope(request, true)); }],
     ['/api/dsh-e2e/log-library/assign', ['POST'], async request => service.logLibrary.assign((await mutationBody(request)).id, requestScope(request, true))],
     ['/api/dsh-e2e/log-library/delete', ['POST'], async request => service.logLibrary.remove(await mutationBody(request, 512 * 1024), requestScope(request, true))],
+    ['/api/dsh-e2e/log-library/delete-permanently', ['POST'], async request => service.logLibrary.remove(await mutationBody(request, 512 * 1024), requestScope(request, true))],
     ['/api/dsh-e2e/log-library/restore', ['POST'], async request => { const body = await mutationBody(request); return service.logLibrary.restore(body.batchId, requestScope(request, true), body.ids); }],
     ['/api/dsh-e2e/log-library/begin', ['POST'], async request => service.logLibrary.begin(await mutationBody(request), requestScope(request, true))],
     ['/api/dsh-e2e/log-library/chunk', ['POST'], async request => { const scope = requestScope(request, true); assertMutationOrigin(request); const p = new URL(request.url).searchParams; const length = Number(request.headers.get('content-length')); if (length > 262144) throw Error('日志分块过大'); const data = Buffer.from(await request.arrayBuffer()); return service.logLibrary.chunk(p.get('id'), Number(p.get('index')), data, scope); }],
