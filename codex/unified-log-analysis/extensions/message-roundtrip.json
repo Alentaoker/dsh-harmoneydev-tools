@@ -1,0 +1,1 @@
+{"namespace":"message-roundtrip@1","states":["send","response"],"rules":["初始化成功不等于发送成功","创建请求不等于发送","回调入库不等于屏幕显示","历史final不属于本轮","未观测到不等于发生在窗口外"]}

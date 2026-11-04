@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.LOCAL-ONLY-mapping.json
+**/*-LOCAL-ONLY/
+**/work/
+**/feedback/

@@ -1,0 +1,6 @@
+interface:
+  display_name: "统一日志分析"
+  short_description: "仅显式调用，分析任意可读日志并生成含可回查原始证据的离线交互报告"
+  default_prompt: "使用 $unified-log-analysis 分析我提供的日志，生成可视化报告。"
+policy:
+  allow_implicit_invocation: false

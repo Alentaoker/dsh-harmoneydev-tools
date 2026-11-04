@@ -1,0 +1,5 @@
+interface:
+  display_name: "日志分析反馈"
+  short_description: "显式生成离线脱敏反馈，由用户检查和分享"
+policy:
+  allow_implicit_invocation: false
