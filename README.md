@@ -8,6 +8,7 @@ main 已增加[原生投屏 protobuf 新旧兼容适配](docs/NATIVE_VIDEO_ABI_2
 
 - **日志分析**：会话日志导入、编码识别、ZIP/GZ/RAR解析、Notepad++式跨文件查找、加入对话和跨会话清理。
 - **dshHarmony**：设备投屏、手工操作、截图录屏与批注、实时日志和保存到会话。
+- **hdesign-to-arkts（skill）**：按 Pixso 设计稿取参并实现 ArkTS 界面，见 [skill/hdesign-to-arkts](skill/hdesign-to-arkts/README.md)。
 
 不再提供AI操控手机工具或开发验证框架。加入对话用于日志分析，只写草稿，保留人工发送。
 

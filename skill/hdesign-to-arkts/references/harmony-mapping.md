@@ -1,31 +1,32 @@
-# 设计属性到工程实现
+# 设计值到 ArkTS
 
-## 设计、资源存在与实现结论分开记
+## 先看工程
 
-“设计值从 MCP 直接读到”与“鸿蒙映射已经成立”是两件事。每条属性分别记录：设计原始值/绑定与来源、有效值的解析依据、工程实现候选及证据、当前结论。
+先读本次组件的现有实现和引用的资源，再扩展到相关模块，跳过 build、oh_modules 等生成和依赖目录。语义和显示效果都合适的已有组件、资源优先复用。设计值与工程封装或系统资源的表现冲突时，说明差异，请用户选择。
 
-- 设计证据：直接读取、经已解释的变量/实例解析得到、无法确定。
-- 资源存在：目标工程 SDK 的 `sysResource.symbol` 中有准确名称，即确认该系统资源存在；不要求官网或社区二次收录。其他 SDK 快照或字体中独有的 glyph name 不能代替这一检查。
-- 实现结论：已确认、候选、待补充。资源存在与选对设计图形分开记录；名称存在不抹去截图中的图形冲突。图形及用途证据已足够时继续实现，不为资源存在重复求确认。
-- 未知不写成 0、空值、默认值或“没有”。区分无此属性、工具未返回、解析失败和不适用。
+## 对照表
 
-## 按相关工程约定映射
+| 设计（Pixso） | ArkTS |
+|---|---|
+| 自动布局：横向 / 纵向，子项间距 | `Row({ space })` / `Column({ space })` |
+| 主轴、交叉轴对齐 | 主轴 `.justifyContent(FlexAlign.*)`；交叉轴 `Row` 用 `.alignItems(VerticalAlign.*)`，`Column` 用 `.alignItems(HorizontalAlign.*)` |
+| 子项尺寸：填充 / 固定 / 适应内容 | 主轴方向 `.layoutWeight(1)`，交叉轴方向 `.width('100%')` 或 `.height('100%')` / 固定宽高 / 不设 |
+| 自动换行 | `Flex({ wrap: FlexWrap.Wrap })` |
+| 没有自动布局的 frame | 用相邻节点的相对坐标之差算间距和边距 |
+| 内边距 | `.padding({ top, right, bottom, left })` |
+| 圆角、描边 | `.borderRadius()`、`.border({ width, color })` |
+| 填充色 | `.backgroundColor()`；颜色变量与 `sys.color` 同名时用 `$r('sys.color.名')` |
+| 不透明度 | 节点不透明度用 `.opacity()`；填充色自带的 alpha 写进颜色值 |
+| 投影 | `.shadow({ radius, color, offsetX, offsetY })`；设计里的扩展（spread）没有同名参数 |
+| 图层模糊、背景模糊 | `.blur()`、`.backdropBlur()`，或按效果选 `.backgroundBlurStyle()` |
+| 文字 | `.fontSize()`、`.fontWeight()`、`.fontColor()`、`.lineHeight()`、`.letterSpacing()`、`.textAlign()`；百分比行高 = 字号 × 百分比；一段文字里混合样式用 `Span` |
+| 文字截断 | `.maxLines()` 加 `.textOverflow({ overflow: TextOverflow.Ellipsis })` |
+| 交互态变体（按下、禁用等） | `.stateStyles({ pressed: {...}, disabled: {...} })` |
+| HM Symbol 图标 | 独立图标 `SymbolGlyph($r('sys.symbol.名'))`；文字中用 `SymbolSpan`；组件的 symbol 图标参数用 `SymbolGlyphModifier`；大小、颜色用 `.fontSize()`、`.fontColor([...])` |
+| 导出的 SVG / PNG | `Image($r('app.media.名'))`；SVG 可用 `.fillColor()` 改色 |
 
-先读本次组件的实现与引用资源，再扩展到相关模块；排除 build、oh_modules 等生成/依赖目录。优先复用语义和显示结果都适合的已有组件与资源，不因某值“很接近”就替换设计值。
+组件实例以实例上的最终生效值为准；变体、实例覆盖和变量的读取方法见 [pixso-select.md](pixso-select.md)。
 
-| 项目 | 需要确认的关系 | 避免的捷径 |
-|---|---|---|
-| 尺寸、间距、圆角 | 设计单位、目标设备和工程单位约定；固定值还是自适应约束 | 不把任意设计 px 无条件视作 vp，不随意舍入 |
-| 字体 | 字号单位、字体/字重、行高、混合区间与系统缩放要求 | 不把设计数字直接当 fp 而省略单位依据 |
-| 颜色 | 设计变量的语义和 mode；工程 token 在相关主题下的值与用途 | 不凭 RGB 相近或名称含义相近确认 sys.color |
-| 透明度 | 颜色自身 alpha、节点 opacity、父级合成分别是什么 | 不把填充透明度无条件改为整组件 opacity |
-| 模糊、阴影 | 目标 SDK 的可用 API、参数含义、渲染差异和需求 | 不把某个半径硬映射成固定 BlurStyle/ShadowStyle |
-| 图标 | HM Symbol 文字按字码映射目标 SDK；矢量/SVG/PNG由用户决定素材或具体 symbol；项目明确要求时才补查旧系统兼容 | 不做图片自动匹配或 dHash，不把字体内部 glyph 当正式资源 |
+## 图标
 
-需要系统 token 时，核对目标工程实际 SDK/资源定义。symbol 名称以该 SDK 正式成员为准，不添加官网收录门槛，不查询社区库。随包快照属于其记录的 SDK；当前机器的另一个 SDK 不自动代表用户工程目标，跨 SDK 版本需重建字码查询库。
-
-只有项目明确要求兼容较旧运行系统时，才对本次所用 API/资源补做相应兼容检查；没有此要求时，不把全量运行系统确认设为实现前置条件。项目常规编译和运行效果验证仍按原开发任务执行。
-
-设计要求、现有工程封装与系统资源表现冲突时，记录差异和建议，询问影响结果的选择。用户已要求实现时，可以使用已确认的方案继续开发；候选资源不得默默写进最终实现。
-
-图标按 [hmsymbol-index.md](hmsymbol-index.md) 处理。精确匹配无法成立时，按 [resource-arbitration.md](resource-arbitration.md) 处理；不为凑齐系统 token 强行替换原图。
+按 [hmsymbol-index.md](hmsymbol-index.md) 处理；需要用户决定或导出时，按 [resource-arbitration.md](resource-arbitration.md)。

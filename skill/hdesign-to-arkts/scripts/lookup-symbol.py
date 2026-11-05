@@ -10,6 +10,8 @@ import sys
 
 SCHEMA = "hdesign-sdk-symbol-catalog-v1"
 DEFAULT_MAP = Path(__file__).resolve().parent.parent / "resources" / "symbol-catalog.json"
+NAME_WRAPPER = re.compile(r"""\$r\(\s*(['"])(.*)\1\s*\)""")
+ESCAPED_TEXT = re.compile(r"(?:\\u[0-9a-fA-F]{4}){1,2}")
 
 
 class QueryError(ValueError):
@@ -25,20 +27,32 @@ def parse_codepoint(value):
     return number
 
 
+def normalize_name(value):
+    name = value.strip()
+    match = NAME_WRAPPER.fullmatch(name)
+    if match:
+        name = match.group(2).strip()
+    return name.removeprefix("sys.symbol.")
+
+
 def normalize_query(kind, value):
+    original_value = value
     if kind == "text":
+        if ESCAPED_TEXT.fullmatch(value):
+            value = json.loads('"' + value + '"')
         if len(value) != 1 or 0xD800 <= ord(value) <= 0xDFFF:
             raise QueryError("--text requires exactly one Unicode scalar, not empty, multiple characters, or a surrogate")
         codepoint = ord(value)
     elif kind == "codepoint":
         codepoint = parse_codepoint(value)
     elif kind == "name":
-        if not value or any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+        name = normalize_name(value)
+        if not name or any(0xD800 <= ord(char) <= 0xDFFF for char in name):
             raise QueryError("--name requires a nonempty exact name without surrogates")
-        return {"kind": kind, "input": value}, None
+        return {"kind": kind, "input": original_value, "name": name}, None
     else:
         raise QueryError("unknown query kind")
-    return {"kind": kind, "input": value, "codepoint": f"U+{codepoint:04X}"}, codepoint
+    return {"kind": kind, "input": original_value, "codepoint": f"U+{codepoint:04X}"}, codepoint
 
 
 def load_map(path):
@@ -80,7 +94,7 @@ def lookup(kind, value, map_path=DEFAULT_MAP):
     candidates = []
     for item in entries:
         actual = sorted({parse_codepoint(cp) for cp in item["codepoints"]})
-        if (kind == "name" and item["name"] != value) or (kind != "name" and codepoint not in actual):
+        if (kind == "name" and item["name"] != query["name"]) or (kind != "name" and codepoint not in actual):
             continue
         candidates.append({
             "name": item["name"],
@@ -115,7 +129,7 @@ def main(argv=None):
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--text", help="exactly one Unicode scalar")
     inputs.add_argument("--codepoint", help="U+F01D5, 0xF01D5, or F01D5")
-    inputs.add_argument("--name", help="exact SDK name, case-sensitive")
+    inputs.add_argument("--name", help="exact SDK name; sys.symbol. prefix and $r('...') are accepted")
     parser.add_argument("--map", dest="map_path", type=Path, default=DEFAULT_MAP, help="generated SDK catalog JSON")
     args = parser.parse_args(argv)
     kind = next(key for key in ("text", "codepoint", "name") if getattr(args, key) is not None)
