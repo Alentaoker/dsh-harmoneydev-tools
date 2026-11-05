@@ -6,6 +6,7 @@ export class HarmonyRequestError extends Error {
   readonly signatureRejected: boolean;
   readonly deviceErrorCode?: string;
   readonly videoBlocked: boolean;
+  readonly nativeVideoUnavailable: boolean;
   private readonly videoSource?: string;
   private readonly videoDevicePid?: number;
   private readonly ownedByAnotherInstance: boolean;
@@ -16,6 +17,8 @@ export class HarmonyRequestError extends Error {
     super(typeof value === "string" ? value : typeof error?.message === "string" ? error.message : `Request failed (${status})`);
     this.code = typeof error?.code === "string" ? error.code : undefined;
     this.reason = typeof error?.details?.reason === "string" ? error.details.reason : undefined;
+    this.nativeVideoUnavailable = ['native-video-abi-incompatible', 'native-video-loader-abi-incompatible',
+      'native-video-loader-integrity-rejected', 'native-video-abi-probe-invalid'].includes(this.reason ?? '');
     this.videoBlocked = error?.code === 'DEVICE_BUSY' && ['native-video-conflict', 'shared-video-unreachable'].includes(this.reason ?? '')
       || this.message === 'Stop the other live video projection before opening this stream';
     this.videoSource = typeof error?.details?.source === 'string' ? error.details.source : undefined;

@@ -3,7 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rm, rename } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createServer } from 'node:net';
-import { embeddedNativeVideoResource, nativeVideoProfile, type NativeVideoQuality } from './native-video-resource';
+import { embeddedNativeVideoResources, selectNativeVideoResource, nativeVideoProfile, type NativeVideoQuality } from './native-video-resource';
+import { nativeVideoLoaderFailure, waitForNativeVideoReady } from './native-video-startup';
 import { HarmonyError } from './errors';
 import { HosVideoPacketizer } from './media/hos-packets';
 import type { HarmonyVideoConnection } from './types';
@@ -100,7 +101,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   if(signal?.aborted) throw new HarmonyError('COMMAND_ABORTED','Video start cancelled');
   const profile=nativeVideoProfile(options.quality);
   let phaseStarted=Date.now();stats.stage='resource';
-  const resource=await embeddedNativeVideoResource(options.resourceDirectory);
+  const candidates=await embeddedNativeVideoResources(options.resourceDirectory);
   (stats.phases as Record<string,number>).resource=Date.now()-phaseStarted;
   await mkdir(options.cacheDirectory,{recursive:true});
   stats.quality=options.quality||'balanced';stats.encoderProfile=profile;
@@ -124,13 +125,16 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
    stats.recoveredOrphans=orphanPids.length;
   }
   await saveOwner();
-  stats.resourceName=resource.resourceName;stats.resourceSha256=resource.hash;
   const existing=await command(['shell','ps -ef'],'native_video_existing',signal);
   const conflicts=nativeVideoConflicts(existing);
   if(conflicts.length) {
    const stat=await command(['shell',`cat /proc/${conflicts[0].devicePid}/stat`],'native_video_conflict_identity',signal).catch(()=> '');
    throw nativeVideoConflictError(conflicts,nativeVideoStartTime(stat));
   }
+  stats.stage='abi';
+  const selection=await selectNativeVideoResource(candidates,command,signal);
+  const resource=selection.resource;
+  stats.resourceName=resource.resourceName;stats.resourceSha256=resource.hash;stats.resourceVariant=resource.id;stats.abi=selection.abi;
   // Establish the reusable UI agent before the encoder; never initialize it
   // over an active stream, because UiDriver.connect may restart uitest.
   stats.stage='prepare';
@@ -151,6 +155,8 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
    const ps=await command(['shell','ps -ef'],'native_video_pid');
    pid=ownedNativeVideoPid(ps,extension);
    if(pid) break;
+   const failure=nativeVideoLoaderFailure(await command(['shell',`tail -c 4000 ${log}`],'native_video_loader_probe',signal).catch(()=>''));
+   if(failure)throw failure;
    await new Promise(r=>setTimeout(r,100));
   }
   if(!pid) throw new HarmonyError('CAPABILITY_UNAVAILABLE','Native video extension could not start');
@@ -175,7 +181,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   // Capture a JPEG only if the encoder has not supplied a picture. Eager PNG
   // capture/pull/re-encode on every video start wastes work on changing screens.
   phaseStarted=Date.now();stats.stage='rpcReady';
-  try{await new Promise<void>((accept,reject)=>client.waitForReady(Date.now()+12000,(e:Error)=>e?reject(e):accept()));}catch(error){throw new HarmonyError('CAPABILITY_UNAVAILABLE','投屏进程已启动，但视频通道未能连接。插件已回收本次连接，可重新接入。',{cause:error,retryable:true,details:{stage:'video_channel',localPort}});}finally{(stats.phases as Record<string,number>).rpcReady=Date.now()-phaseStarted;}
+  try{await waitForNativeVideoReady(client,()=>command(['shell',`tail -c 4000 ${log}`],'native_video_loader_probe',signal),signal);}catch(error){if(error instanceof HarmonyError)throw error;throw new HarmonyError('CAPABILITY_UNAVAILABLE','投屏进程已启动，但视频通道未能连接。插件已回收本次连接，可重新接入。',{cause:error,retryable:true,details:{stage:'video_channel',localPort}});}finally{(stats.phases as Record<string,number>).rpcReady=Date.now()-phaseStarted;}
   stats.stage='firstPicture';
   if(closed||signal?.aborted) throw new HarmonyError('COMMAND_ABORTED','Video start cancelled');
   const packetizer=new HosVideoPacketizer(profile.fps,true);
@@ -263,5 +269,5 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   armIdle();
   statsTimer=setInterval(()=>{void saveStats();},10000);statsTimer.unref?.();
   return {stream,changeDriven:true,isLive:()=>!closed,close:async()=>{try{controller?.close();}catch{}await cleanup();}};
- }catch(e){stats.endStage=stats.stage;stats.error=e instanceof Error?e.message:'Native video failed';await cleanup();throw e;}
+ }catch(e){stats.endStage=stats.stage;stats.error=e instanceof Error?e.message:'Native video failed';if(e instanceof HarmonyError)stats.failure=e.toJSON();await cleanup();throw e;}
 }

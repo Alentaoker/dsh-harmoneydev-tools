@@ -921,6 +921,13 @@ export function useHarmonyLiveFrameEngine(options: UseHarmonyLiveFrameOptions) {
             updateScreenState({ awake: true, locked: true });
             continue;
           }
+          if (failure instanceof HarmonyRequestError && failure.nativeVideoUnavailable) {
+            // Reconnecting the same binaries cannot fix a loader/ABI rejection.
+            // Keep the existing passive preview until this viewer is restarted.
+            await attempt.jpegChain.catch(() => undefined);
+            await pollFrames({ intervalMs: () => policy().screenshotIntervalMs });
+            return;
+          }
           if (blocked || failures >= MAX_VIDEO_FAILURES_BEFORE_COMPATIBLE) {
             // The packaged low-latency video service is not available on every
             // device/decoder combination. Fall back to the existing bounded

@@ -86,6 +86,23 @@ function pendingFetch(requests) {
 
 async function settle() { for (let turn = 0; turn < 40; turn++) await Promise.resolve(); }
 
+for(const reason of ['native-video-abi-incompatible','native-video-loader-abi-incompatible','native-video-loader-integrity-rejected'])test('permanent native failure immediately keeps compatible preview without a reconnect loop: '+reason,async()=>{
+ let video=0,frames=0;
+ const h=harness(false,async url=>{
+   if(url.startsWith('/api/harmony/video?')){video++;return {ok:false,status:501,json:async()=>({error:{code:'CAPABILITY_UNAVAILABLE',message:'组件不兼容',retryable:false,details:{reason}}})};}
+   if(url.startsWith('/api/harmony/screen-state?'))return {ok:true,json:async()=>({awake:true,locked:false})};
+   if(url.startsWith('/api/harmony/geometry?'))return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'g'}})};
+   frames++;return {ok:true,headers:new Headers({'X-Harmony-Generation':'1','X-Harmony-Revision':'1'}),blob:async()=>new Blob()};
+ });
+ h.options.canvasRef.current={width:100,height:200,getContext:()=>({drawImage(){},clearRect(){}})};
+ globalThis.createImageBitmap=async()=>({width:100,height:200,close(){}});
+ try{
+   h.flush();await settle();assert.equal(h.flush().mode,'frames');assert.ok(frames>0);assert.equal(video,1);
+   for(let i=0;i<4;i++){h.advance(180000);for(const [id,timer] of [...h.timers]){h.timers.delete(id);timer.fn();}await settle();h.flush();await settle();}
+   assert.equal(video,1);assert.ok(frames>1);
+ }finally{await h.dispose();}
+});
+
 test('visibility during a pending connection keeps the remaining 45 second startup budget',async()=>{
  const h=harness(false,pendingFetch([]));h.options.keepAlive=true;h.options.renderVisibleRef={current:true};h.options.renderChangeRef={current:null};
  try{h.flush();await settle();h.advance(5000);h.options.renderVisibleRef.current=false;h.options.renderChangeRef.current();h.options.renderVisibleRef.current=true;h.options.renderChangeRef.current();assert.ok([...h.timers.values()].some(t=>t.delay===40000));assert.ok(![...h.timers.values()].some(t=>t.delay===15000));}finally{await h.dispose();}

@@ -28,6 +28,18 @@ function ownedCommands(){
  if(args[0]==='shell'&&args[1]==='ps -ef'&&extension&&!stopped)return `shell 4321 1 0 00:00:00 ? 00:00:00 uitest start-daemon singleness --extension-name ${extension}`;return '';
  }};
 }
+test('a linker failure before a persistent daemon PID is reported once and cleans the owned upload',async t=>{
+ const f=await fixture(t),commands=[];let starts=0;
+ await assert.rejects(openNativeDevEcoVideo({...f,serial:'test-loader-fast',command:async(args,op)=>{
+   commands.push(args);if(op==='native_video_start')starts++;
+   if(op==='native_video_loader_probe'||op==='native_video_failure_log')return 'MUSL-LDSO: symbol not found: MapFieldBase::SetMapDirty';
+   return '';
+ }}),e=>e.details?.reason==='native-video-loader-abi-incompatible'&&e.retryable===false);
+ assert.equal(starts,1);assert.equal(commands.some(a=>a[0]==='fport'&&a[1]!=='rm'),false);
+ assert.ok(commands.some(a=>a[1]?.startsWith('rm -f /data/local/tmp/libdsh_video_')));
+ const stats=JSON.parse(await readFile(join(f.cacheDirectory,'native-video-status.json'),'utf8'));
+ assert.equal(stats.cleanup,'complete');assert.equal(stats.failure.details.reason,'native-video-loader-abi-incompatible');
+});
 function ownerFile(f,serial){return join(f.ownershipDirectory,createHash('sha256').update(serial).digest('hex')+'.video.json');}
 async function oldOwner(f,serial,record){await mkdir(f.ownershipDirectory,{recursive:true});await writeFile(ownerFile(f,serial),JSON.stringify(record));}
 function data(call,bytes){call.emit('data',{getPayloadMap:()=>new Map([['data',{getValBytes_asU8:()=>bytes}]])});}

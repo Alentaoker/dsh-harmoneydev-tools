@@ -1,12 +1,30 @@
 {
-  "schemaVersion": 1,
-  "fileName": "libdsh-native-video.z.so",
+  "schemaVersion": 2,
   "architecture": "aarch64",
-  "resourceName": "libscrcpy/libscrcpy_server_unix_6.6-20260418.z.so",
-  "byteLength": 268471,
-  "sha256": "98bbc964fef1c4d17b446ec717102b855d09224b23fc1872bf70e1f928d010dd",
-  "sourceSdk": "lib/hosScrcpy-1.0.17.15-java21-SNAPSHOT-shaded.jar",
-  "sourceSdkSha256": "1ea193389f3ec6cf05705852e85b6d2ee67111209bfd868909816ea7e4142e0c",
-  "sourceArchiveSha256": "541797bd57b3168ff57473fa5208d2381de9aa3b4a1e0cd240be9b32fdae1457",
-  "distribution": "private personal installation; original vendor rights retained"
+  "variants": [
+    {
+      "schemaVersion": 1,
+      "fileName": "libdsh-native-video.z.so",
+      "architecture": "aarch64",
+      "resourceName": "libscrcpy/libscrcpy_server_unix_6.6-20260418.z.so",
+      "byteLength": 268471,
+      "sha256": "98bbc964fef1c4d17b446ec717102b855d09224b23fc1872bf70e1f928d010dd",
+      "sourceSdk": "lib/hosScrcpy-1.0.17.15-java21-SNAPSHOT-shaded.jar",
+      "sourceSdkSha256": "1ea193389f3ec6cf05705852e85b6d2ee67111209bfd868909816ea7e4142e0c",
+      "sourceArchiveSha256": "541797bd57b3168ff57473fa5208d2381de9aa3b4a1e0cd240be9b32fdae1457",
+      "distribution": "private personal installation; original vendor rights retained",
+      "id": "protobuf-legacy"
+    },
+    {
+      "id": "protobuf-current",
+      "fileName": "libdsh-native-video-6.9.z.so",
+      "resourceName": "libscrcpy/libscrcpy_server_unix_6.9-20260801.z.so",
+      "byteLength": 239799,
+      "sha256": "296e3b0f0ba92c176639e946174a0bb9096025f313fa11bcb27628e6aca5612b",
+      "sourceSdk": "hosScrcpy-1.0.20-beta.jar",
+      "sourceSdkSha256": "62cba3701b635a9d9c906a70f18cbc43efd60b7bfd61e2bb18fb88b2c7dfb187",
+      "sourceArchiveSha256": "62cba3701b635a9d9c906a70f18cbc43efd60b7bfd61e2bb18fb88b2c7dfb187"
+    }
+  ],
+  "distribution": "original vendor rights retained; components are unmodified"
 }
