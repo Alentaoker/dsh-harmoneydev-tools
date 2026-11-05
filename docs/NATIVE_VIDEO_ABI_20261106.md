@@ -1,6 +1,6 @@
 # 原生投屏 protobuf 兼容修复与验收
 
-状态：未发布的本机修复候选，基于 0.6.0-rc.1；没有覆盖现有 GitHub tag/release。问题来源：[issue #1](https://github.com/Alentaoker/dsh-harmoneydev-tools/issues/1)。
+状态：纳入 main 的源码修复，基于 0.6.0-rc.1；本次未发布新的 tag/Release，没有覆盖原安装包。问题来源：[issue #1](https://github.com/Alentaoker/dsh-harmoneydev-tools/issues/1)。
 
 ## 为什么不能统一换成新版
 
@@ -40,4 +40,4 @@ Protobuf 的协议字节兼容与 C++ 二进制兼容不同。[Protobuf 官方�
 
 Issue 中的 SGT 设备未连接本机，未取得该机完整导出符号集，不能声称新组件已在那台设备成功加载。符号满足只是必要条件，不证明 C++ 内存布局、其它系统库、签名和 RPC 协议都兼容。新组件是未改动原厂文件，也不能据此推断该固件 XPM 一定接受。
 
-在故障设备上检查：自动选择 `protobuf-current`，无 ABI/XPM loader 错误，实际 H.264 编码和浏览器解码成功；确认首图、静止/活动画面、切会话、录屏和收尾。另需读取受限固件的实际回退、其它设备架构、库路径变化和多设备并发验收。本次未公开发布或关闭 issue。
+在故障设备上检查：自动选择 `protobuf-current`，无 ABI/XPM loader 错误，实际 H.264 编码和浏览器解码成功；确认首图、静止/活动画面、切会话、录屏和收尾。另需读取受限固件的实际回退、其它设备架构、库路径变化和多设备并发验收。本次只更新 main 源码，未发布新 tag/Release；issue 保留待故障设备实测确认。

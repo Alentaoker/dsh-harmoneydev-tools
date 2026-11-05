@@ -4,6 +4,8 @@
 
 [下载0.6.0-rc.1](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.6.0-rc.1)。从旧dshVerify升级时，需迁移实际包登记；请先阅读安装与AI升级指南。
 
+main 已增加[原生投屏 protobuf 新旧兼容适配](docs/NATIVE_VIDEO_ABI_20261106.md)。现有 v0.6.0-rc.1 下载包不包含这次修复；本次只更新主干源码，未发布新的 tag/Release。故障设备实际加载仍待验，既有资源耗尽重连问题也未解决。
+
 - **日志分析**：会话日志导入、编码识别、ZIP/GZ/RAR解析、Notepad++式跨文件查找、加入对话和跨会话清理。
 - **dshHarmony**：设备投屏、手工操作、截图录屏与批注、实时日志和保存到会话。
 

@@ -2,6 +2,8 @@
 
 两个插件配套升级，适用 Windows x64、DSH 0.2.0-rc.2、Node.js 24。本版为RC预发布。[固定版本下载](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.6.0-rc.1) · [自审验收与未验范围](LOG_ANALYSIS_SELF_REVIEW_20261105.md) · [日志使用指南](LOG_WORKBENCH.md)
 
+2026-11-06 的 main 源码已包含[投屏 protobuf 兼容修复](NATIVE_VIDEO_ABI_20261106.md)，尚无新的 tag/Release；上方固定版本下载仍是原安装包，不含这次修复。需要该修复时使用当前主干源码或兼容修复文档中的候选包作为 `$source`，再按实际安装路径构建登记。故障设备和长期推流稳定性仍需分别验收。
+
 ## 版本与数据
 
 | 项目 | 本版 |
