@@ -1,3 +1,4 @@
+import {releaseAllVideo} from '../vendor/lib/harmony/media/live-video-hub';
 import { MediaSessionContext, prepareMediaAttachment } from './media-session';
 import React, { useEffect, useState } from 'react';
 import { SafeHarmonyPanel } from '../vendor/components/workspace/HarmonyPanel';
@@ -6,8 +7,9 @@ import { version } from '../package.json';
 import { LogSessionContext, appendAnalysisDraft } from './log-session';
 export const inject = ['slots', 'sidebarRight', 'sidebarRightTabs', 'conversation', 'sessions'];
 export function apply(ctx: any) {
+  ctx.effect(()=>()=>releaseAllVideo(),'dshHarmony: video hub cleanup');
   const id = 'dsh-harmony', kind = 'dshHarmony';
-  ctx.effect(() => ctx.sidebarRightTabs.register({ id, kind, title: () => 'dshHarmony', guide: [{ id: kind, order: 5, title: () => 'dshHarmony', description: () => '鸿蒙设备控制与测试工作台' }] }), 'dshHarmony: tab');
+  ctx.effect(() => ctx.sidebarRightTabs.register({ id, kind, title: () => 'dshHarmony', guide: [{ id: kind, order: 5, title: () => 'dshHarmony', description: () => '鸿蒙设备与日志' }] }), 'dshHarmony: tab');
   function Panel(props: any) {
     const sessionId = props.sessionId;
     const info = props.useTabInfo();
@@ -20,17 +22,11 @@ export function apply(ctx: any) {
       consume(); window.addEventListener('dshHarmony:open-logs', open); return () => window.removeEventListener('dshHarmony:open-logs', open);
     }, [sessionId]);
     useEffect(() => { if (sessionId) fetch(`/api/harmony/dsh-session?sessionId=${encodeURIComponent(sessionId)}`).then(r => r.json()).then(v => setCwd(v.cwd)).catch(() => {}); }, [sessionId]);
-    const guide = (prompt?: string) => {
-      if (!prompt) return;
-      const actx = ctx.sessions.scope(sessionId);
-      if (actx) ctx.conversation.input.for(actx).setDraft(prompt);
-      else throw new Error('当前会话已关闭，请重新打开会话');
-    };
-    const openLogs = (fileId?: string) => { if (!sessionId) return; sessionStorage.setItem('dshE2E:open-log:' + sessionId, fileId || '__workbench__'); ctx.sidebarRight.openTabIn(sessionId, 'dshE2E'); window.dispatchEvent(new CustomEvent('dshE2E:open-logs', { detail: { sessionId, id: fileId } })); };
+    const openLogs = (fileId?: string) => { if (!sessionId) return; sessionStorage.setItem('dshLogAnalysis:open-log:' + sessionId, fileId || '__workbench__'); ctx.sidebarRight.openTabIn(sessionId, 'dshLogAnalysis'); window.dispatchEvent(new CustomEvent('dshLogAnalysis:open-logs', { detail: { sessionId, id: fileId } })); };
     const analyze = (text: string) => { const session = sessionId && ctx.sessions.scope(sessionId); if (!session) throw Error('请先打开一个会话'); appendAnalysisDraft(ctx.conversation.input.for(session), text); };
-    return <div className="dshHarmony"><MediaSessionContext.Provider value={{ prepareAttachment: () => prepareMediaAttachment(ctx, sessionId) }}><LogSessionContext.Provider value={{ sessionId, onOpenLogs: openLogs, onAnalyze: analyze }}><SafeHarmonyPanel openLogRequest={openLogRequest} active={info.tab.visible} cwd={cwd} pluginVersion={version} onOpenLocalTerminal={() => ctx.sidebarRight.openTabIn(sessionId, 'terminal')} onGuideAgent={guide} /></LogSessionContext.Provider></MediaSessionContext.Provider></div>;
+    return <div className="dshHarmony"><MediaSessionContext.Provider value={{ prepareAttachment: () => prepareMediaAttachment(ctx, sessionId) }}><LogSessionContext.Provider value={{ sessionId, onOpenLogs: openLogs, onAnalyze: analyze }}><SafeHarmonyPanel openLogRequest={openLogRequest} active={info.tab.visible} cwd={cwd} pluginVersion={version} onOpenLocalTerminal={() => ctx.sidebarRight.openTabIn(sessionId, 'terminal')} /></LogSessionContext.Provider></MediaSessionContext.Provider></div>;
   }
-  function Header(props: any) { return <button title="鸿蒙设备控制与测试工作台" onClick={() => props.sessionId ? ctx.sidebarRight.openTabIn(props.sessionId, kind) : ctx.sidebarRight.openTab(kind)}>dshHarmony</button>; }
+  function Header(props: any) { return <button title="鸿蒙设备与日志" onClick={() => props.sessionId ? ctx.sidebarRight.openTabIn(props.sessionId, kind) : ctx.sidebarRight.openTab(kind)}>dshHarmony</button>; }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: id }, Panel)), 'dshHarmony: body');
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: id }, () => <span>dshHarmony</span>)), 'dshHarmony: title');
   ctx.effect(() => ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({ name: 'conversation.session.header.actions', id: 'dshHarmony', order: 30 }, Header)), 'dshHarmony: entry');

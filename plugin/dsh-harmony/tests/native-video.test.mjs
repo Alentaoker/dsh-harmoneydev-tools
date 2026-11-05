@@ -161,3 +161,18 @@ test('a static screen starts with an explicit preview and switches to H264 at it
  assert.equal(nativeConfig[8],0);assert.equal(nativePicture.readUInt32BE(),3);assert.equal(nativePicture[8],1);
  const before=captures;await new Promise(r=>setTimeout(r,60));assert.equal(captures,before);await reader.cancel();
 });
+
+test('cold startup overlaps transfer with automation but waits for both before starting the encoder',async t=>{
+ const f=await fixture(t),x=fakeTransport(),cmd=ownedCommands();let releasePrepare,transferred;
+ const prepareGate=new Promise(r=>releasePrepare=r),transferSeen=new Promise(r=>transferred=r);let preparing=false;
+ const pending=openNativeDevEcoVideo({...f,serial:'test-parallel-prepare',transport:x.transport,
+  prepareAutomation:async()=>{preparing=true;await prepareGate;return true;},command:async(args,op,signal)=>{if(op==='native_video_send'){assert.equal(preparing,true);transferred();}return cmd.command(args,op,signal);}});
+ await transferSeen;assert.equal(cmd.commands.some(a=>a[1]?.startsWith('uitest')),false);x.call.once('started',()=>data(x.call,key));releasePrepare();
+ const connection=await pending;await connection.close();const stats=JSON.parse(await readFile(join(f.cacheDirectory,'native-video-status.json'),'utf8'));assert.equal(stats.automationReady,true);assert.equal(typeof stats.phases.rpcReady,'number');
+});
+
+test('failed preparation waits for the parallel file transfer before cleanup and never starts a daemon',async t=>{
+ const f=await fixture(t),cmd=ownedCommands();let releaseTransfer,transferEntered;const entered=new Promise(r=>transferEntered=r),gate=new Promise(r=>releaseTransfer=r);let settled=false;
+ const pending=openNativeDevEcoVideo({...f,serial:'test-parallel-failure',prepareAutomation:async()=>{throw Error('prepare failed');},command:async(args,op,signal)=>{if(op==='native_video_send'){transferEntered();await gate;}return cmd.command(args,op,signal);}});
+ const rejection=assert.rejects(pending,/prepare failed/).then(()=>settled=true);await entered;await new Promise(r=>setImmediate(r));assert.equal(settled,false);releaseTransfer();await rejection;assert.equal(cmd.commands.some(a=>a[1]?.startsWith('uitest')),false);assert.ok(cmd.commands.some(a=>a[1]?.startsWith('rm -f')));
+});

@@ -149,9 +149,9 @@ test('会话目录的链接不被管理入口扫描或删除', async t => fixtur
 
 test('真实 HTTP 注册链路提供独立管理入口，原会话读取仍隔离且写入拒绝跨源', () => fixture(async library => {
   const b = await upload(library, B), routes = new Map(); registerRoutes({ effect: fn => fn(), connection: { fetch: { register(route) { routes.set(route.path, route); } } } }, { logLibrary: library });
-  const route = path => routes.get('/api/dsh-e2e/log-library/' + path);
-  const get = path => new Request('http://localhost/api/dsh-e2e/log-library/' + path);
-  const post = (path, body, origin = 'http://localhost') => new Request('http://localhost/api/dsh-e2e/log-library/' + path + '?sessionId=' + A.sessionId, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const route = path => routes.get('/api/dsh-log-analysis/log-library/' + path);
+  const get = path => new Request('http://localhost/api/dsh-log-analysis/log-library/' + path);
+  const post = (path, body, origin = 'http://localhost') => new Request('http://localhost/api/dsh-log-analysis/log-library/' + path + '?sessionId=' + A.sessionId, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal((await route('management/sessions').fetch(get('management/sessions'))).status, 400);
   const list = await route('management/sessions').fetch(get('management/sessions?sessionId=session-A')); assert.equal((await list.json()).total, 1);
   const foreign = await route('info').fetch(get('info?sessionId=session-A&scope=all&id=' + b.id)); assert.equal(foreign.status, 400);
@@ -166,7 +166,7 @@ test('一键删除 HTTP 无文字确认且清理所选会话旧残留，单会�
   const a = await upload(library, A), b = await upload(library, B), old = await upload(library, B, 'old.log');
   await legacyTrashFixture(root, B, [old.id]);
   const routes = new Map(); registerRoutes({ effect: fn => fn(), connection: { fetch: { register(route) { routes.set(route.path, route); } } } }, { logLibrary: library });
-  const post = (endpoint, body, origin = 'http://localhost') => routes.get('/api/dsh-e2e/log-library/' + endpoint).fetch(new Request('http://localhost/api/dsh-e2e/log-library/' + endpoint + '?sessionId=' + A.sessionId, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+  const post = (endpoint, body, origin = 'http://localhost') => routes.get('/api/dsh-log-analysis/log-library/' + endpoint).fetch(new Request('http://localhost/api/dsh-log-analysis/log-library/' + endpoint + '?sessionId=' + A.sessionId, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) }));
   assert.equal((await post('delete-permanently', { ids: [b.id] })).status, 400);
   assert.equal((await post('management/delete', { sessionIds: [B.sessionId] }, 'http://evil.example')).status, 400);
   const response = await post('management/delete', { sessionIds: [B.sessionId] }); assert.equal(response.status, 200); const result = await response.json(); assert.equal(result.removed, 2); assert.deepEqual(result.errors, []);

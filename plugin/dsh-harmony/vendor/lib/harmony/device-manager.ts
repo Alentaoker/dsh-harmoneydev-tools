@@ -1,4 +1,5 @@
 import { markMediaOrigin } from "./artifacts";
+import {retireAllSharedVideo} from './shared-video';
 import { randomBytes } from "node:crypto";
 import { statSync, readFileSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
@@ -2038,7 +2039,7 @@ export class HarmonyDeviceManager {
     try {
       normalized = writeHarmonyConfig(next, this.configPath);
     } catch (error) {
-      await candidateBackend?.dispose?.();
+      await Promise.resolve().then(()=>candidateBackend?.dispose?.()).catch(()=>undefined);
       throw error;
     }
     this.config = normalized;
@@ -2047,7 +2048,8 @@ export class HarmonyDeviceManager {
       await this.emergencyStop("configuration_changed");
       this.backend = candidateBackend;
       this.runtimeError = undefined;
-      await Promise.resolve(previousBackend?.dispose?.()).catch(() => undefined);
+      try { await retireAllSharedVideo(); }
+      finally { await Promise.resolve(previousBackend?.dispose?.()).catch(() => undefined); }
     }
     return this.getConfig();
   }
@@ -2294,7 +2296,7 @@ export class HarmonyDeviceManager {
     for (const controller of this.logStreamControllers.keys()) controller.abort();
     this.disposed = true;
     await this.emergencyStop("disposed");
-    const cleanup = await boundedCleanup(Promise.resolve(this.backend?.dispose?.()), this.cleanupTimeoutMs);
+    const cleanup = await boundedCleanup((async()=>{const results=await Promise.allSettled([retireAllSharedVideo(),Promise.resolve(this.backend?.dispose?.())]);if(results.some(result=>result.status==='rejected'))throw Error('Device cleanup uncertain');})(), this.cleanupTimeoutMs);
     this.listeners.clear();
     return { cleanup: this.stoppingDevices.size ? "uncertain" : cleanup };
   }

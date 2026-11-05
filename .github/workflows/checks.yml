@@ -24,7 +24,7 @@ jobs:
           npm --prefix plugin/dsh-harmony run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm --prefix plugin/dsh-harmony test
-      - name: E2E dependencies
+      - name: Log analysis dependencies
         run: npm --prefix plugin/dsh-e2e ci --legacy-peer-deps
-      - name: E2E build and tests
+      - name: Log analysis build and tests
         run: npm --prefix plugin/dsh-e2e test

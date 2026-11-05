@@ -2,7 +2,7 @@ import { TEXT_BYTES, PACKAGE_BYTES, importLimitLabel } from './log-limits.mjs';
 
 export function libraryUrl(sessionId, path, params = {}) {
   if (!sessionId) throw Error('请先打开一个会话');
-  return '/api/dsh-e2e/log-library/' + path + '?' + new URLSearchParams({ sessionId, ...params });
+  return '/api/dsh-log-analysis/log-library/' + path + '?' + new URLSearchParams({ sessionId, ...params });
 }
 export async function libraryRequest(sessionId, path, { params, body, rawBody, ...options } = {}) {
   const response = await fetch(libraryUrl(sessionId, path, params), rawBody !== undefined ? { ...options, body: rawBody } : body === undefined ? options : { ...options, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

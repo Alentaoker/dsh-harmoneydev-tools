@@ -10,7 +10,7 @@ import { DeviceConsole } from "./DeviceConsole";
 import { TransferJobs } from "./TransferJobs";
 import { DatabaseExportJobs } from "./DatabaseExportJobs";
 import { TaskOverview } from "./TaskOverview";
-import { ScenarioWorkbench } from "./ScenarioWorkbench";
+
 import { ScenarioReportMetadata, ScenarioStepResults } from "./ScenarioStepResults";
 import styles from "../HarmonyPanel.module.css";
 import type { AudioOutput } from "@/lib/harmony/audio/acoustic-provider";
@@ -90,7 +90,6 @@ export function WorkbenchTools({ serial, canControl, ensureControl, onControlHan
       {tab === "files" ? <div hidden={tab !== "files"}><DeviceFiles serial={serial} initialSandbox={sandboxTarget} chinese={chinese} cwd={cwd} canControl={canControl} ensureControl={ensureControl} onControlHandoff={onControlHandoff} onDatabaseOpen={onOpenDatabase} /></div> : null}
       {tab === "databases" ? <div hidden={tab !== "databases"}><SqliteViewer serial={serial} initialDatabaseId={initialDatabaseId} chinese={chinese} onShowTasks={onShowTasks} /></div> : null}
       <div hidden={tab !== "commands"}><DeviceConsole serial={serial} chinese={chinese} canControl={canControl} ensureControl={ensureControl} onOpenLocalTerminal={onOpenLocalTerminal} visible={active && tab === "commands"} cwd={cwd} /></div>
-      <div hidden={tab !== "scenarios"}><ScenarioWorkbench active={tab === "scenarios"} serial={serial} canControl={canControl} ensureControl={ensureControl} cwd={cwd} chinese={chinese}/></div>
       {tab === "diagnostics" ? <>
         <ol><li>{copy("连接 USB 并在手机确认调试授权。", "Connect USB and allow debugging on the phone.")}</li><li>{copy("检查设备、画面及 UI 树；锁屏时请手动解锁。", "Check the device, frame and UI tree; unlock manually when needed.")}</li><li>{copy("在测试应用校准点击或保持操作。", "Calibrate input in a test app.")}</li><li>{copy("搜索测试应用，再预览和执行场景。已连接设备可直接操作。", "Find the test app, then preview and run a scenario. Connected devices are ready for control.")}</li></ol>
         <p>{copy("只读检查连接、命令和坐标能力，不自动解锁。已探测不代表真机动作已验证。", "Read-only connection, command and geometry checks. Never unlocks automatically. Probed commands are not verified physical effects.")}</p>

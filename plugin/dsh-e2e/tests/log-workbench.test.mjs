@@ -7,7 +7,6 @@ import { Readable } from 'node:stream';
 import { compilePattern, compileLogQuery } from '../src/log-query.mjs';
 import { createLogArchive, archivedLogPage, boundedLogLines, exportLogStream } from '../src/log-archive.mjs';
 import { createLogLibrary, parseImportedLog } from '../src/log-library.mjs';
-import { RETIRED_OPERATIONS } from '../src/service.mjs';
 import { registerRoutes } from '../src/index.mjs';
 
 test('结构化字段、大小写、正则过滤；危险和无效正则立即拒绝', () => {
@@ -84,10 +83,10 @@ test('离线日志路由需要会话；旧执行操作明确退役', async () =>
   try {
     const routes = new Map(), library = createLogLibrary(root), ctx = { effect(fn) { fn(); }, connection: { fetch: { register(route) { routes.set(route.path, route); } } } };
     registerRoutes(ctx, { logLibrary: library });
-    const response = await routes.get('/api/dsh-e2e/log-library/list').fetch(new Request('http://localhost/api/dsh-e2e/log-library/list'));
-    assert.equal(response.status, 400); const scoped = await routes.get('/api/dsh-e2e/log-library/list').fetch(new Request('http://localhost/api/dsh-e2e/log-library/list?sessionId=A')); assert.equal(scoped.status, 200); assert.equal((await scoped.json()).total, 0);
-    assert.equal(Object.keys(RETIRED_OPERATIONS).includes('run'), true);
-    assert.match(RETIRED_OPERATIONS.run, /内层执行器已移除/);
-    assert.match(RETIRED_OPERATIONS.replay, /动作回放已移除/);
+    const response = await routes.get('/api/dsh-log-analysis/log-library/list').fetch(new Request('http://localhost/api/dsh-log-analysis/log-library/list'));
+    assert.equal(response.status, 400); const scoped = await routes.get('/api/dsh-log-analysis/log-library/list').fetch(new Request('http://localhost/api/dsh-log-analysis/log-library/list?sessionId=A')); assert.equal(scoped.status, 200); assert.equal((await scoped.json()).total, 0);
+    assert.ok([...routes.keys()].every(path => path.startsWith('/api/dsh-log-analysis/log-library/')));
+    assert.ok(!routes.has('/api/dsh-e2e/status'));
+    assert.ok(!routes.has('/api/dsh-e2e/validation/tasks'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

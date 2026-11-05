@@ -42,38 +42,12 @@ async function harness(viewer = false) {
   const find = (tree, predicate) => { if (!tree || typeof tree !== 'object') return; if (Array.isArray(tree)) { for (const child of tree) { const result = find(child, predicate); if (result) return result; } return; } if (predicate(tree)) return tree; return find(tree.props?.children, predicate); };
   const button = (tree, label) => { const value = find(tree, node => node.type === 'button' && text(node) === label); assert.ok(value, 'Missing button: ' + label); return value; };
   const openValidation = (sessionId, visible = true) => { const tree = render(sessionId, visible); assert.ok(find(tree, node => node.type === 'summary' && text(node) === '更多工具')); button(tree, '开发验证').props.onClick(); return render(sessionId, visible); };
-  return { render, reply, requests, timers, text, button, openValidation, dispose() { for (const effect of effects) effect?.cleanup?.(); } };
+  return { ctx, render, reply, requests, timers, text, button, openValidation, dispose() { for (const effect of effects) effect?.cleanup?.(); } };
 }
 
-test('dshVerify 默认日志工作台不读取手机状态或验证记录，开发验证收在更多工具', async () => {
-  const h = await harness(); try {
-    const hidden = h.render('A', false); assert.equal(h.requests.length, 0); assert.match(h.text(hidden), /会话日志/);
-    const visible = h.render('A', true); assert.equal(h.requests.length, 0); assert.match(h.text(visible), /dshVerify/);
-    h.openValidation('A'); assert.equal(h.requests.length, 2); assert.ok(h.requests.some(request => request.url.includes('/status?'))); assert.ok(h.requests.some(request => request.url.includes('/runs?')));
-  } finally { h.dispose(); }
-});
+test('日志分析面板只挂载日志工作台，不请求手机或验证记录',async()=>{const h=await harness();try{for(const visible of [false,true]){const tree=h.render('A',visible);assert.equal(h.requests.length,0);assert.equal(tree.props.children.type.name,'LogWorkbench');}}finally{h.dispose();}});
 
-test('开发验证隐藏时不开请求，显示后读取，隐藏取消在途请求及轮询并拒收迟到响应', async () => {
-  const h = await harness(); try {
-    h.openValidation('first', false); assert.equal(h.requests.length, 0);
-    h.render('first', true); assert.equal(h.requests.length, 2); const pending = [...h.requests];
-    h.render('first', false); assert.ok(pending.every(request => request.signal.aborted));
-    for (const request of pending) h.reply(request, request.url.includes('/status') ? { active: [] } : { runs: [{ id: 'foreign', name: '迟到的旧记录' }], counts: {}, filteredTotal: 1, nextOffset: null }); await tick();
-    assert.equal(h.text(h.render('first', false)).includes('迟到的旧记录'), false); assert.equal([...h.timers.values()].some(timer => timer.ms === 15000), false);
-    h.render('first', true); assert.equal(h.requests.length, 4);
-  } finally { h.dispose(); }
-});
-
-test('开发验证切会话取消旧读取且回到默认日志，旧响应不能覆盖新会话记录', async () => {
-  const h = await harness(); try {
-    h.openValidation('first'); const old = [...h.requests];
-    const switched = h.render('second', true); assert.ok(old.every(request => request.signal.aborted)); assert.match(h.text(switched), /会话日志/);
-    const before = h.requests.length; h.openValidation('second'); const current = h.requests.slice(before); assert.equal(current.length, 2); assert.ok(current.every(request => request.url.includes('sessionId=second')));
-    for (const request of current) h.reply(request, request.url.includes('/status') ? { active: [], devices: [] } : { runs: [{ id: 'new', name: '新会话报告', status: 'passed' }], counts: { all: 1, passed: 1 }, filteredTotal: 1, nextOffset: null, offset: 0 }); await tick();
-    for (const request of old) h.reply(request, request.url.includes('/status') ? { active: [] } : { runs: [{ id: 'old', name: '旧会话报告' }], counts: { all: 1 }, filteredTotal: 1, nextOffset: null }); await tick();
-    const text = h.text(h.render('second', true)); assert.equal(text.includes('新会话报告'), true); assert.equal(text.includes('旧会话报告'), false);
-  } finally { h.dispose(); }
-});
+test('已关闭的会话加入草稿被拒绝，不调用宿主当前会话回退',async()=>{const h=await harness();try{const tree=h.render('gone',true);h.ctx.sessions.scope=()=>undefined;h.ctx.conversation.input.for=()=>assert.fail('must not fall back to another session');assert.throws(()=>tree.props.children.props.onDraft('log'),/会话已关闭/);}finally{h.dispose();}});
 
 test('日志页被正文大小缩短后，上一页回到真实起点，不固定减去 100', async () => {
   const h = await harness(true); try {
@@ -91,13 +65,6 @@ test('日志工作台切换会话后取消旧读取，迟到文件不会串入�
     h.reply(old, { protocolVersion: 2, sessionId: 'A', files: [{ id: 'a', sessionId: 'A', name: 'A独有.log' }], total: 1, nextOffset: null }); await tick();
     const value = h.text(h.render('B', true)); assert.ok(value.includes('B独有.log')); assert.ok(!value.includes('A独有.log'));
     h.render('B', false); assert.equal(current.signal.aborted, true);
-  } finally { h.dispose(); }
-});
-
-test('开发验证返回日志工作台取消轮询，不再访问手机状态', async () => {
-  const h = await harness(); try {
-    h.openValidation('A'); assert.equal(h.requests.length, 2); h.button(h.render('A', true), '日志工作台').props.onClick(); const next = h.render('A', true);
-    assert.equal(h.requests.length, 2); assert.ok(h.requests.every(request => request.signal.aborted)); assert.match(h.text(next), /会话日志/);
   } finally { h.dispose(); }
 });
 

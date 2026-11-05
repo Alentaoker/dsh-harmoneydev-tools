@@ -19,7 +19,7 @@ function storedTab(): LogWorkbenchTab {
  * scroll position and pause state. Only the visible pane refreshes: the hidden
  * live pane keeps collecting without re-rendering or scanning.
  *
- * The session pane is the real dshE2E workbench (see SessionLogPane), so import,
+ * The session pane is the real dsh-log-analysis workbench (see SessionLogPane), so import,
  * delete, rename, packages, pagination and analysis are not duplicated here.
  */
 export function LogWorkbenchShell({ active, serial, online, sessionId, copy, onDraft }: {

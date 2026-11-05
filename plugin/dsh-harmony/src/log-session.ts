@@ -3,17 +3,17 @@ export type LogSnapshot = { bundle: string; serial: string; filters: Record<stri
 export const LogSessionContext = createContext<{ sessionId?: string; onOpenLogs?: (id?: string) => void; onAnalyze?: (text: string) => void }>({});
 export async function saveSessionLog(file: File, sessionId: string, snapshot: LogSnapshot, signal: AbortSignal) {
   if (!sessionId || !file.size || file.size > 256 * 1024 * 1024) throw Error('请在会话中保存 1 字节～256 MiB 的日志');
-  const url = (path: string, params = {}) => '/api/dsh-e2e/log-library/' + path + '?' + new URLSearchParams({ sessionId, ...params });
+  const url = (path: string, params = {}) => '/api/dsh-log-analysis/log-library/' + path + '?' + new URLSearchParams({ sessionId, ...params });
   const json = async (path: string, body: unknown, params = {}, raw = false, cancellable = true) => {
     const response = await fetch(url(path, params), { method: 'POST', headers: { 'content-type': raw ? 'application/octet-stream' : 'application/json' }, body: raw ? body as BodyInit : JSON.stringify(body), signal: cancellable ? signal : undefined });
     const value = await response.json().catch(() => ({}));
-    if (!response.ok || value.error) throw Error(value.error || '会话日志库不可用，请启用匹配版本的 dshE2E 并完整重启宿主');
+    if (!response.ok || value.error) throw Error(value.error || '会话日志库不可用，请启用匹配版本的 dsh-log-analysis 并完整重启宿主');
     return value;
   };
   let id: string | undefined;
   try {
     const capabilities = await fetch(url('capabilities'), { signal }).then(async response => response.ok ? response.json() : undefined);
-    if (capabilities?.protocolVersion !== 2 || capabilities?.sessionId !== sessionId) throw Error('会话保存需要新版 dshE2E 日志库，请成对更新两个插件并完整重启宿主');
+    if (capabilities?.plugin !== 'dshLogAnalysis' || capabilities?.protocolVersion !== 2 || capabilities?.sessionId !== sessionId) throw Error('会话保存需要新版 dsh-log-analysis 日志库，请成对更新两个插件并完整重启宿主');
     signal.throwIfAborted(); const started = await json('begin', { name: file.name, size: file.size, sourceKind: 'realtime', snapshot }, {}, false, false); id = started.id;
     for (let at = 0, index = 0; at < file.size; at += 256 * 1024) { signal.throwIfAborted(); await json('chunk', await file.slice(at, at + 256 * 1024).arrayBuffer(), { id, index: String(index++) }, true); }
     signal.throwIfAborted(); return await json('finish', { id });

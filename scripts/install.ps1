@@ -31,6 +31,11 @@ try {
     & $installEnvironment.DshCli plugin --profile $DshProfile add $installPackage
     if ($LASTEXITCODE -ne 0) { throw "DSH registration failed: $installPackage. Backup: $installBackup. Stop and inspect partial changes; no automatic rollback is performed." }
   }
+  $installProfilePackage=Get-Content (Join-Path $installEnvironment.ProfilePath 'package.json') -Raw | ConvertFrom-Json
+  if ($installProfilePackage.dependencies.'dsh-e2e') {
+    & $installEnvironment.DshCli plugin --profile $DshProfile remove dsh-e2e
+    if ($LASTEXITCODE -ne 0) { throw "Retired plugin removal failed. Backup: $installBackup" }
+  }
   & $installEnvironment.NodeExe (Join-Path $PSScriptRoot 'register-bundles.mjs') (Join-Path $installEnvironment.ProfilePath 'package.json')
   if ($LASTEXITCODE -ne 0) { throw "Bundle registration failed. Backup: $installBackup" }
   & $installEnvironment.NodeExe (Join-Path $PSScriptRoot 'verify-install.mjs') $installEnvironment.ProfilePath

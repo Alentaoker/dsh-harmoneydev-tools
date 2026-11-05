@@ -29,9 +29,17 @@ test('guarded Hypium calls cannot initialize a cold agent, but reuse a prepared 
  await backend.reset();assert.deepEqual(await backend.execute('test-prepared','tap',[1,2],undefined,false),{used:false});assert.equal(connects,1);
 });
 
-test('a failed UI warmup is retired and does not prevent opening passive video',async()=>{
- let retired=false;
- const hdc={hdcPath:'hdc',openVideoStream:async(_s,_signal,prepare)=>{assert.equal(await prepare(),false);assert.equal(retired,true);return {stream:new ReadableStream(),close:async()=>{}};}};
- const backend=new HybridHarmonyBackend({hdcBackend:hdc,hypiumDriver:{waitForIdle:async()=>{throw Error('UI agent unavailable');},reset:async()=>{retired=true;}}});
+test('passive video never initializes a cold semantic driver',async()=>{
+ const hdc={hdcPath:'hdc',openVideoStream:async(_s,_signal,prepare)=>{assert.equal(await prepare(),false);return {stream:new ReadableStream(),close:async()=>{}};}};
+ const backend=new HybridHarmonyBackend({hdcBackend:hdc,hypiumDriver:{status:()=>[],waitForIdle:()=>assert.fail('viewing must not warm a UI driver'),reset:()=>assert.fail('no worker exists')}});
  const c=await backend.openVideoStream('test-view-only');await c.close();
+});
+
+test('manual pointers without a video do not cold-start the semantic driver',async()=>{let tapped=0;const backend=new HybridHarmonyBackend({hdcBackend:{hdcPath:'hdc',nativeVideoStreaming:()=>false,nativeVideoPresent:async()=>false,tap:async()=>tapped++},hypiumDriver:{execute:async(_s,_op,_a,_sig,connect)=>{assert.equal(connect,false);return {used:false};}}});await backend.tap('manual-no-video',1,2);assert.equal(tapped,1);});
+test('passive video retires a pending old initialization before encoder startup and reuses a ready driver',async()=>{
+ for(const state of ['connecting','cooldown','ready']){let retired=false;
+  const hdc={hdcPath:'hdc',openVideoStream:async(serial,_signal,prepare)=>{assert.equal(await prepare(),state==='ready');assert.equal(retired,state!=='ready');return {stream:new ReadableStream(),close:async()=>{}};}};
+  const backend=new HybridHarmonyBackend({hdcBackend:hdc,hypiumDriver:{status:()=>[{serial:'test-existing',state}],waitForIdle:()=>assert.fail('must not initialize'),reset:async()=>{retired=true;}}});
+  const c=await backend.openVideoStream('test-existing');await c.close();
+ }
 });

@@ -57,7 +57,7 @@ test('closing the find bar consumes Escape so the outer panel stays open', () =>
 });
 
 test('a requested session log file is honoured once, not pinned', () => {
-  assert.match(workbench, /export function LogWorkbench\(\{ visible, sessionId, onDraft, openFileId, onOpenFileConsumed \}\)/);
+  assert.match(workbench, /export function LogWorkbench\(\{ visible, sessionId, onDraft, openFileId, onOpenFileConsumed, onRealtime \}\)/);
   assert.match(workbench, /if \(!sessionId \|\| !openFileId\) return;/);
   assert.match(workbench, /\}, \[sessionId, openFileId\]\);/, 'a tab switch alone must not re-open the last requested file');
   assert.match(workbench, /consumed\.current\?\.\(\);/);

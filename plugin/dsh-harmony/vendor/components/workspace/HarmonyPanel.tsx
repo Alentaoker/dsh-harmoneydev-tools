@@ -8,6 +8,7 @@ import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { useHarmonyManualControl } from "@/hooks/useHarmonyManualControl";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
+import { subscribeDeviceEvents } from "@/lib/harmony/device-events";
 import { LogSessionContext } from "../../../src/log-session";
 import { recommendVideoQuality, QUALITY_HOLD_MS } from "@/lib/harmony/media/video-quality";
 import { isComposingKey } from "@dsh-log-search-menu";
@@ -56,7 +57,6 @@ type MediaNotice = {
   pathStatus?: "copying" | "copied" | "failed";
 };
 type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" | "bundled" };
-type VisionModel = { provider: string; modelId: string; name: string };
 function recordOf(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -160,17 +160,6 @@ function normalizeRuntimeCandidates(value: unknown): RuntimeCandidate[] {
   });
 }
 
-function normalizeVisionModels(value: unknown): VisionModel[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    const source = recordOf(item);
-    const provider = optionalString(source?.provider);
-    const modelId = optionalString(source?.modelId);
-    if (!source || !provider || !modelId) return [];
-    return [{ provider, modelId, name: optionalString(source.name) ?? modelId }];
-  });
-}
-
 function messageOf(error: unknown, fallback: string, chinese: boolean): string {
   return error instanceof HarmonyRequestError ? error.messageFor(chinese) : error instanceof Error ? error.message : fallback;
 }
@@ -192,14 +181,15 @@ type HarmonyPanelProps = {
   sessionRunning?: boolean;
   cwd?: string | null;
   onOpenLocalTerminal?: () => void;
-  onGuideAgent?: ((prompt?: string) => void) | undefined;
+
   onSnapshot?: (fingerprint: number) => void;
   pluginVersion?: string;
 };
 
 type FrameZoom = "fit" | "100" | "150" | "200";
 
-export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenLocalTerminal, onGuideAgent, onSnapshot, pluginVersion, openLogRequest }: HarmonyPanelProps) {
+const deviceViewCache:{profile:RuntimeProfile|'web';devices:HarmonyDevice[];state:HarmonyState|null;serial:string}={profile:'web',devices:[],state:null,serial:''};
+export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenLocalTerminal, onSnapshot, pluginVersion, openLogRequest }: HarmonyPanelProps) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -207,20 +197,18 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
   const screenshotBinding = bindings["harmony.screenshot"];
   const screenshotShortcutLabel = formatShortcutBinding(screenshotBinding, isMacPlatform(typeof window === "undefined" ? undefined : window.piDesktop?.platform));
   const panelRef = useRef<HTMLDivElement>(null);
-  const [profile, setProfile] = useState<RuntimeProfile | "web">("web");
-  const [devices, setDevices] = useState<HarmonyDevice[]>([]);
-  const [managerState, setManagerState] = useState<HarmonyState | null>(null);
-  const [selectedSerial, setSelectedSerial] = useState("");
+  const [profile, setProfile] = useState<RuntimeProfile | "web">(deviceViewCache.profile);
+  const [devices, setDevices] = useState<HarmonyDevice[]>(deviceViewCache.devices);
+  const [managerState, setManagerState] = useState<HarmonyState | null>(deviceViewCache.state);
+  const [selectedSerial, setSelectedSerial] = useState(deviceViewCache.serial);
+  useEffect(()=>{deviceViewCache.profile=profile;deviceViewCache.devices=devices;deviceViewCache.state=managerState;deviceViewCache.serial=selectedSerial;},[profile,devices,managerState,selectedSerial]);
   const [sdkPath, setSdkPath] = useState("");
   const [videoProvider, setVideoProvider] = useState<"native" | "hos-scrcpy">("native");
   const [videoQuality, setVideoQuality] = useState<"efficient" | "balanced" | "smooth">("balanced");
   const [hosPackageDirectory, setHosPackageDirectory] = useState("");
   const [javaPath, setJavaPath] = useState("");
   const [runtimeCandidates, setRuntimeCandidates] = useState<RuntimeCandidate[]>([]);
-  const [visionModels, setVisionModels] = useState<VisionModel[]>([]);
-  const [visionEnabled, setVisionEnabled] = useState(false);
-  const [visionModelKey, setVisionModelKey] = useState("");
-  const [shareScreenshot, setShareScreenshot] = useState(false);
+  const originalVision = useRef<unknown>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toolTab, setToolTab] = useState<"apps" | "files" | "databases" | "commands" | "scenarios" | "voice" | "logs" | "history" | "tasks" | "diagnostics" | "inputs">("logs");
   const [databaseSelection, setDatabaseSelection] = useState("");
@@ -373,12 +361,8 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
   const loadConfig = useCallback(async () => {
     if (!desktopAvailable) return;
     try {
-      const [payloadValue, modelPayloadValue] = await Promise.all([
-        jsonRequest<unknown>("/api/harmony/config"),
-        jsonRequest<unknown>("/api/harmony/vision-models"),
-      ]);
+      const payloadValue = await jsonRequest<unknown>("/api/harmony/config");
       const payload = recordOf(payloadValue);
-      const modelPayload = recordOf(modelPayloadValue);
       const config = recordOf(payload?.config);
       const diagnostics = normalizeHarmonyState(payload?.diagnostics);
       const candidates = normalizeRuntimeCandidates(payload?.candidates);
@@ -389,13 +373,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       setVideoQuality(video?.quality === "efficient" || video?.quality === "smooth" ? video.quality : "balanced");
       setHosPackageDirectory(optionalString(video?.packageDirectory) ?? "");
       setJavaPath(optionalString(video?.javaPath) ?? "");
-      setVisionModels(normalizeVisionModels(modelPayload?.models));
-      const vision = recordOf(config?.vision);
-      const provider = optionalString(vision?.provider);
-      const modelId = optionalString(vision?.modelId);
-      setVisionEnabled(vision?.enabled === true && Boolean(provider && modelId));
-      setVisionModelKey(provider && modelId ? `${provider}\u0000${modelId}` : "");
-      setShareScreenshot(vision?.shareScreenshotWithActionModel === true);
+      originalVision.current = config?.vision;
       setDiagnostics(payload?.diagnostics ?? null);
     } catch (configError) {
       setError(messageOf(configError, copy("无法读取 SDK 配置", "Unable to read SDK configuration"), chinese));
@@ -415,8 +393,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       if (!disposed) pollTimer = window.setTimeout(() => { void poll(); }, 5_000);
     };
     void poll();
-    const source = new EventSource("/api/harmony/events");
-    source.onmessage = (event) => {
+    const unsubscribeEvents = subscribeDeviceEvents((event) => {
       try {
         const metadata = recordOf(JSON.parse(event.data));
         if (!metadata) return;
@@ -436,11 +413,10 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       } catch {
         // A malformed metadata event cannot affect the device command path.
       }
-    };
-    source.onerror = () => { /* Polling below remains the recovery path. */ };
+    });
     return () => {
       disposed = true;
-      source.close();
+      unsubscribeEvents();
       pollController?.abort();
       if (pollTimer !== undefined) window.clearTimeout(pollTimer);
     };
@@ -643,14 +619,13 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
   };
 
   const saveSettings = () => void run(async () => {
-    const [provider, modelId] = visionModelKey.split("\u0000");
     const payloadValue = await jsonRequest<unknown>("/api/harmony/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         hdcPath: sdkPath.trim() || null,
         video: { provider: videoProvider, quality: videoQuality, ...(videoProvider === "hos-scrcpy" ? { packageDirectory: hosPackageDirectory.trim(), ...(javaPath.trim() ? { javaPath: javaPath.trim() } : {}) } : {}) },
-        vision: visionEnabled ? { enabled: true, provider, modelId, shareScreenshotWithActionModel: shareScreenshot } : null,
+        vision: originalVision.current,
       }),
     });
     const payload = recordOf(payloadValue);
@@ -695,7 +670,6 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       : selected?.state === "offline"
         ? copy("设备离线", "Offline")
         : selected ? copy("连接未确认", "Connection unconfirmed") : copy("未连接", "Not connected");
-  const visionModel = visionModels.find((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey);
   const zoomScale = frameZoom === "fit" ? null : Number(frameZoom) / 100;
   const frameCanvasStyle = zoomScale && frameSize
     ? { width: frameSize.width * zoomScale, height: frameSize.height * zoomScale, maxWidth: "none", maxHeight: "none" }
@@ -777,7 +751,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
 
       <div className={styles.settingGroup}>
-        <div className={styles.settingCopy}><strong>{copy("手动 Wi-Fi 连接", "Manual Wi-Fi connection")}</strong><small>{copy("通过 HDC 连接或断开局域网设备", "Connect or disconnect a LAN device through HDC")}</small></div>
+        <div className={styles.settingCopy}><strong>{copy("手动 Wi-Fi 连接", "Manual Wi-Fi connection")}</strong></div>
         <TcpDeviceConnection chinese={chinese} onRefresh={() => refresh()} />
         {selected ? <p className={styles.inlineHint}>{selected.transport === "usb" ? copy("当前设备：USB（HDC 已标注）", "Current device: USB (reported by HDC)")
           : selected.transport === "tcp" ? selected.transportEvidence === "hdc" ? copy("当前设备：TCP/Wi-Fi（HDC 已标注）", "Current device: TCP/Wi-Fi (reported by HDC)")
@@ -786,7 +760,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
 
       <div className={styles.settingGroup}>
-        <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong><small>{copy("原生 H.264 视频；无需安装投屏 HAP", "Native H.264 video; no mirror HAP installation")}</small></div>
+        <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong></div>
         <select aria-label={copy("投屏来源", "Video provider")} value={videoProvider} onChange={event => setVideoProvider(event.target.value as "native" | "hos-scrcpy")}>
           <option value="native">{copy("插件原生 H.264", "Plugin native H.264")}</option><option value="hos-scrcpy">HOScrcpy</option>
         </select>
@@ -799,33 +773,15 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
 
       <div className={styles.settingGroup}>
-        <label className={styles.settingToggle}>
-          <span className={styles.settingCopy}><strong>{copy("视觉模型", "Vision model")}</strong><small>{copy("只负责看手机屏幕", "Only reads the phone screen")}</small></span>
-          <input type="checkbox" checked={visionEnabled} onChange={(event) => setVisionEnabled(event.target.checked)} />
-        </label>
-        {visionEnabled ? <>
-          <select aria-label={copy("选择视觉模型", "Select vision model")} value={visionModelKey} onChange={(event) => setVisionModelKey(event.target.value)}>
-            <option value="">{copy("选择模型", "Choose model")}</option>
-            {visionModelKey && !visionModels.some((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey)
-              ? <option value={visionModelKey}>{copy("当前不可用", "Currently unavailable")} · {visionModelKey.replace("\u0000", "/")}</option>
-              : null}
-            {visionModels.map((model) => <option key={`${model.provider}\u0000${model.modelId}`} value={`${model.provider}\u0000${model.modelId}`}>{model.name} · {model.provider}</option>)}
-          </select>
-          <p className={styles.modelFlow}>{copy(`视觉模型看屏幕${visionModel ? `（${visionModel.name}）` : ""}，当前对话模型负责操作。`, `The vision model reads the screen${visionModel ? ` (${visionModel.name})` : ""}; the current chat model takes action.`)}</p>
-          <label className={styles.compactCheck}><input type="checkbox" checked={shareScreenshot} onChange={(event) => setShareScreenshot(event.target.checked)} />{copy("也让对话模型查看原图", "Let the chat model see the raw image too")}</label>
-        </> : null}
-      </div>
-
-      <div className={styles.settingGroup}>
         <div className={styles.settingsLinks}>
           <button type="button" onClick={() => openTools("diagnostics")}>{copy("连接诊断", "Diagnostics")}</button>
           <button type="button" onClick={() => openTools("inputs")}>{copy("按键与触摸校准", "Input calibration")}</button>
         </div>
-        <p className={styles.inlineHint}>{copy("锁屏时请在手机上手动解锁。投屏不会自动唤醒或解锁。", "Unlock on the phone when needed. Mirroring never wakes or unlocks it.")}</p>
+        <p className={styles.inlineHint}>{copy("锁屏时请在手机上手动解锁。", "Unlock on the phone when needed.")}</p>
       </div>
       <div className={styles.settingsFooter}>
         <button type="button" onClick={() => setSettingsOpen(false)}>{copy("取消", "Cancel")}</button>
-        <button className={styles.primaryButton} type="button" disabled={busy || (visionEnabled && !visionModelKey) || (videoProvider === "hos-scrcpy" && !hosPackageDirectory.trim())} onClick={saveSettings}>{copy("保存", "Save")}</button>
+        <button className={styles.primaryButton} type="button" disabled={busy || (videoProvider === "hos-scrcpy" && !hosPackageDirectory.trim())} onClick={saveSettings}>{copy("保存", "Save")}</button>
       </div>
     </section> : null}
 
@@ -867,7 +823,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
             ? frameMode === "frames" ? copy("兼容投屏重试中", "Retrying compatible view") : copy("视频流重连中", "Reconnecting stream")
             : frameStatus === "loading"
               ? frameMode === "frames" ? copy("切换兼容投屏", "Switching to compatible view") : copy("视频流连接中", "Connecting stream")
-            : liveFrame?.initialPreview ? copy("实时视频准备中 · 当前预览", "Preparing live video · current preview") : frameMode === "frames" ? copy("兼容投屏 · 自动刷新", "Compatible view · auto refresh") : copy("实时视频流", "Live video")}
+            : liveFrame?.initialPreview ? copy("实时视频准备中 · 当前预览", "Preparing live video · current preview") : frameMode === "frames" ? copy("兼容投屏 · 自动刷新", "Compatible view · auto refresh") : copy("已连接", "Connected")}
           {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ""}
         </div> : null}
         {selectedOnline ? <div className={styles.frameVideoActions} data-visible={(framePhase === "waiting-unlock" || frameStatus === "error" || frameVideoBlocked) ? "true" : "false"}>
@@ -953,11 +909,11 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
           }}>{(chinese ? ["日志", "截图与录屏", "应用"] : ["Logs", "Captures", "Apps"])[index]}</button>)}
           <select aria-label={copy("更多设备工具", "More device tools")} value={["logs", "history", "apps"].includes(toolTab) ? "" : toolTab} onChange={event => { if (event.target.value) changeToolTab(event.target.value as typeof toolTab); }}>
             <option value="">{copy("更多工具", "More tools")}</option>
-            {([['files','文件'],['databases','数据库'],['commands','命令'],['scenarios','测试'],['voice','语音'],['tasks','后台任务'],['diagnostics','连接诊断'],['inputs','输入校准']] as const).map(([id,label]) => <option key={id} value={id}>{label}</option>)}
+            {([['files','文件'],['databases','数据库'],['commands','命令'],['voice','语音'],['tasks','后台任务'],['diagnostics','连接诊断'],['inputs','输入校准']] as const).map(([id,label]) => <option key={id} value={id}>{label}</option>)}
           </select>
         </div>
         <div ref={drawerBodyRef} className={styles.drawerBody} id={`${drawerId}-content`} role="tabpanel" aria-label={copy("工具内容", "Tool content")} onScroll={event => { drawerScrollPositions.current[`${selectedSerial}:${toolTab}`] = event.currentTarget.scrollTop; }}>
-          {["diagnostics", "inputs"].includes(toolTab) ? <div className={styles.toolTitle}><strong>{toolTab === "diagnostics" ? copy("连接诊断", "Diagnostics") : copy("按键与触摸校准", "Input calibration")}</strong><button type="button" onClick={() => changeToolTab("scenarios")}>{copy("返回测试", "Back to tests")}</button></div> : null}
+          {["diagnostics", "inputs"].includes(toolTab) ? <div className={styles.toolTitle}><strong>{toolTab === "diagnostics" ? copy("连接诊断", "Diagnostics") : copy("按键与触摸校准", "Input calibration")}</strong><button type="button" onClick={() => changeToolTab("logs")}>{copy("返回日志", "Back to logs")}</button></div> : null}
           {toolTab === "history" ? <div className={styles.mediaWorkspace}>
           <MediaHistory serial={selectedSerial} refreshKey={mediaNotice?.artifact?.filename} chinese={chinese} />
 
@@ -1003,12 +959,12 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
         </div> : null}
         <div className={styles.actionBar}>
           <button type="button" title={`${copy("截图", "Screenshot")}${screenshotShortcutLabel ? ` · ${screenshotShortcutLabel}` : ""}`} disabled={!canScreenshot || screenshotBusy} onClick={() => mediaAction("capture_screenshot")}><AliIcon name="save" size={15} />{screenshotBusy ? copy("截图中…", "Capturing…") : copy("截图", "Screenshot")}</button>
-          {recording ? <button className={styles.recordingButton} type="button" disabled={busy || !ownsRecording} onClick={() => mediaAction("stop_recording")}><AliIcon name="stop" size={15} />{ownsRecording ? copy(`停止录屏 · ${formatRecordingElapsed(recordingElapsed)}`, `Stop recording · ${formatRecordingElapsed(recordingElapsed)}`) : copy("AI 正在录屏", "AI recording")}</button>
+          {recording ? <button className={styles.recordingButton} type="button" disabled={busy || !ownsRecording} onClick={() => mediaAction("stop_recording")}><AliIcon name="stop" size={15} />{ownsRecording ? copy(`停止录屏 · ${formatRecordingElapsed(recordingElapsed)}`, `Stop recording · ${formatRecordingElapsed(recordingElapsed)}`) : copy("其它窗口正在录屏", "Recording in another window")}</button>
             : <button type="button" aria-label={copy("开始录屏", "Start recording")} disabled={!canControl || busy} onClick={() => mediaAction("start_recording")}><AliIcon name="play" size={15} />{copy("录屏", "Record")}</button>}
           {lease || holder || busy ? <button className={styles.stopButton} type="button" disabled={!selectedOnline} onClick={stopDevice} aria-label={copy("停止当前设备操作", "Stop this device")} title={copy("停止当前设备操作", "Stop this device")}><AliIcon name="stop" size={15} /></button> : null}
         </div>
     <footer className={styles.statusBar}>
-      <span title={copy("锁屏时请手动解锁，投屏不会自动唤醒或解锁。", "Unlock manually. Mirroring never wakes or unlocks your phone.")}>{controlStatus ? controlStatus === "stopping" ? copy("正在停止", "Stopping") : copy("等待恢复", "Recovery required") : selected?.connectionIssue === "hdc-channel-not-ready" ? copy("等待调试通信", "Waiting for debugging communication") : blocked && !agentHasControl ? copy("其他窗口正在操作", "Another window is operating") : selectedOnline && framePhase === "waiting-unlock" ? (frameScreen?.awake === false ? copy("等待手机亮屏", "Waiting for the phone screen") : copy("等待解锁后自动连接", "Connects after you unlock")) : selectedOnline && frameStatus === "live" && frameMatchesDevice ? frameInputEnabled ? copy("可点击拖动 · 已连接", "Click and drag connected") : copy("画面已连接 · 等待坐标校验", "View connected, checking input geometry") : selectedOnline ? copy("等待实时画面", "Waiting for live view") : sessionRunning ? copy("等待设备连接", "Waiting for a device") : copy("请连接设备", "Connect a device")}</span>
+      <span title={copy("锁屏时请手动解锁。", "Unlock manually.")}>{controlStatus ? controlStatus === "stopping" ? copy("正在停止", "Stopping") : copy("等待恢复", "Recovery required") : selected?.connectionIssue === "hdc-channel-not-ready" ? copy("等待调试通信", "Waiting for debugging communication") : blocked && !agentHasControl ? copy("其他窗口正在操作", "Another window is operating") : selectedOnline && framePhase === "waiting-unlock" ? (frameScreen?.awake === false ? copy("等待手机亮屏", "Waiting for the phone screen") : copy("等待解锁后自动连接", "Connects after you unlock")) : selectedOnline && frameStatus === "live" && frameMatchesDevice ? frameInputEnabled ? copy("可点击拖动 · 已连接", "Click and drag connected") : copy("画面已连接 · 等待坐标校验", "View connected, checking input geometry") : selectedOnline ? copy("等待实时画面", "Waiting for live view") : sessionRunning ? copy("等待设备连接", "Waiting for a device") : copy("请连接设备", "Connect a device")}</span>
       <div className={styles.footerActions}>
       {lease || holder || busy ? <button className={styles.stopButton} type="button" onClick={stopDevice} aria-label={copy("停止设备任务", "Stop device task")} title={copy("停止设备任务", "Stop device task")}><AliIcon name="stop" size={13} /></button> : null}
       <button ref={toolsButtonRef} type="button" aria-expanded={toolsOpen} aria-controls={drawerId} onClick={() => toolsOpen ? closeTools() : openTools()}>{copy("工具", "Tools")}<AliIcon name={toolsOpen ? "arrowdown" : "arrowup"} size={13} /></button>

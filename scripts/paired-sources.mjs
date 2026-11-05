@@ -17,7 +17,6 @@ export const requiredPairedSources = [
   'session-search.mjs',
   'log-query.mjs',
   'log-search-menu.mjs',
-  'presentation.mjs',
   'version.mjs',
   'client.css',
 ];
@@ -25,20 +24,7 @@ export const requiredPairedSources = [
 // Server-side modules that must ship with the source package. They are not part
 // of the paired client build, but a package missing them cannot start or record.
 export const requiredServerSources = [
-  'index.mjs',
-  'service.mjs',
-  'agent.mjs',
-  'tool-contract.mjs',
-  'legacy.mjs',
-  'snapshot.mjs',
-  'validation-store.mjs',
-  'validation-service.mjs',
-  'capture-session.mjs',
-  'logs.mjs',
-  'evidence.mjs',
-  'records.mjs',
-  'log-management.mjs',
-  'session-search-storage.mjs',
+  'index.mjs','service.mjs','log-library.mjs','log-management.mjs','log-storage.mjs','log-worker.mjs','log-package.mjs','log-rar.mjs','log-encoding.mjs','log-parser.mjs','log-archive.mjs','logs.mjs','session-search-storage.mjs',
 ];
 
 const resolveExtensions = ['', '.mjs', '.jsx', '.js', '.json', '.css'];
@@ -99,7 +85,7 @@ export async function verifyPairedSources(root) {
     try { await lstat(join(root, 'plugin', 'dsh-e2e', 'src', file)); }
     catch { missing.push(file); }
   }
-  for (const removed of ['engine.mjs', 'executor.mjs', 'rpc.mjs']) {
+  for (const removed of ['engine.mjs','executor.mjs','rpc.mjs','agent.mjs','tool-contract.mjs','validation-service.mjs','validation-store.mjs','capture-session.mjs','evidence.mjs','legacy.mjs','records.mjs','presentation.mjs','snapshot.mjs']) {
     if (await exists(join(root, 'plugin', 'dsh-e2e', 'src', removed))) throw new Error(`removed runner module is still present: plugin/dsh-e2e/src/${removed}`);
   }
   if (missing.length) {

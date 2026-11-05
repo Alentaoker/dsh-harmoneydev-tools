@@ -25,7 +25,7 @@ export interface SharedVideoOptions {
 }
 interface Record { version: 1; pid: number; nonce: string; port: number; token: string }
 interface Peer { socket: Socket; acknowledged: boolean; waitingKey: boolean }
-interface Broker { record: Record; closing: boolean; stopped: Promise<void>; stop(): Promise<void> }
+interface Broker { record: Record; closing: boolean; stopped: Promise<void>; stop(): Promise<void>; idle(): boolean }
 
 // Relay only actionable video metadata. Ownership tokens, paths and arbitrary
 // transport details must never reach another subscriber or the browser.
@@ -134,6 +134,8 @@ async function createBroker(options: SharedVideoOptions, directory: string, key:
           source = Promise.resolve().then(() => options.openSource(controller.signal));
           void pump().catch(() => {});
         }
+      } else if (message?.op === 'detach') {
+        peers.delete(peer);sockets.delete(socket);socket.end(()=>socket.destroy());armIdle();
       } else if (message?.op === 'close') {
         // A graceful last unsubscribe waits for exact daemon/forward cleanup.
         peers.delete(peer);
@@ -147,6 +149,7 @@ async function createBroker(options: SharedVideoOptions, directory: string, key:
   const broker: Broker = {
     record: { version: 1, pid: process.pid, nonce: lock.owner.nonce, port: 0, token: randomBytes(32).toString('hex') },
     closing: false,
+    idle: () => peers.size === 0 && sockets.size === 0,
     get stopped() { return stopPromise ?? Promise.resolve(); },
     stop() {
       return stopPromise ??= (async () => {
@@ -175,7 +178,7 @@ async function createBroker(options: SharedVideoOptions, directory: string, key:
   function armIdle() {
     clearTimeout(idleTimer);
     if (!broker.closing && !peers.size && !sockets.size) {
-      idleTimer = setTimeout(() => void broker.stop().catch(() => {}), options.idleMs ?? 750);
+      idleTimer = setTimeout(() => void broker.stop().catch(() => {}), options.idleMs ?? 15_000);
       idleTimer.unref?.();
     }
   }
@@ -377,7 +380,11 @@ async function connectBroker(options: SharedVideoOptions, record: Record): Promi
     const stream = new ReadableStream<Uint8Array>({
       start(value) { controller = value; },
       pull() { socket.resume(); },
-      cancel() { return close(); },
+      cancel() {
+        if(closed)return;settle();try{controller.close();}catch{}
+        // Detach is not an explicit stop: keep the device encoder warm briefly.
+        socket.resume();socket.end(JSON.stringify({op:'detach'})+'\n',()=>socket.destroy());
+      },
     }, { highWaterMark: 512 * 1024, size: value => value.byteLength });
     const enqueue = (bytes: Uint8Array) => {
       if (!bytes.length || closed) return;
@@ -412,3 +419,14 @@ async function connectBroker(options: SharedVideoOptions, record: Record): Promi
     if (options.signal?.aborted) abort();
   });
 }
+
+/** Retire only this process's idle broker. Never claim ownership of another host. */
+export async function retireSharedVideo(serial:string){
+ const suffix=createHash('sha256').update(serial).digest('hex')+'.broker.json';
+ for(const [key,pending] of brokers){if(!key.endsWith(suffix))continue;const broker=await pending;
+  const deadline=Date.now()+1000;
+  while(!broker.idle()&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));
+  if(broker.idle()){await broker.stop();return true;}
+ }return false;
+}
+export async function retireAllSharedVideo(){const results=await Promise.allSettled([...brokers.values()].map(async pending=>(await pending).stop()));if(results.some(result=>result.status==='rejected'))throw new HarmonyError('DEVICE_BUSY','Video cleanup uncertain',{details:{cleanup:'uncertain'}});}

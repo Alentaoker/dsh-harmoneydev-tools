@@ -1,20 +1,20 @@
 "use client";
 
-import "@dsh-e2e-workbench-css";
-import { LogWorkbench } from "@dsh-e2e-workbench";
+import "@dsh-log-workbench-css";
+import { LogWorkbench } from "@dsh-log-workbench";
 
 /**
  * Session logs inside the shared log workbench.
  *
- * This is deliberately the real dshE2E workbench, not a second viewer: import,
+ * This is deliberately the real dsh-log-analysis workbench, not a second viewer: import,
  * drag-and-drop, delete/restore, rename, package parsing, pagination, app and
  * TAG filters and the AI analysis drafts all stay in one implementation. Log
- * storage, parsing and reports therefore remain owned by dshE2E and no file is
+ * storage, parsing and reports therefore remain owned by dsh-log-analysis and no file is
  * copied or migrated.
  *
  * The paired source is resolved at build time (see scripts/build.mjs); a build
  * without it renders an explicit pairing notice instead of a reduced viewer.
- * Keep both the dshE2E style scope and its flex shell: the workbench needs a
+ * Keep both the dsh-log-analysis style scope and its flex shell: the workbench needs a
  * flex parent to fill the available panel height instead of sizing to content.
  */
 export function SessionLogPane({ active, sessionId, focusFileId, onFocusConsumed, onDraft }: {

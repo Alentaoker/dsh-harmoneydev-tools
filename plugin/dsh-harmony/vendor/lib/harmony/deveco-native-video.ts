@@ -38,7 +38,8 @@ async function loopbackPort(): Promise<number> {
 }
 /** Owns its exact daemon, files and forward. Never kills another uitest or launches the Java GUI. */
 export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promise<HarmonyVideoConnection> {
- const {serial,signal,command}=options;
+ const {serial,signal}=options;const sourceStarted=Date.now();
+ const command:NativeVideoCommand=async(args,operation,commandSignal)=>{const start=Date.now();try{return await options.command(args,operation,commandSignal);}catch(error){stats.lastCommandFailure=operation;throw error;}finally{const phases=stats.phases as Record<string,number>;phases[operation]=(phases[operation]??0)+(Date.now()-start);}};
  if(!/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(serial)) throw new HarmonyError('INVALID_ARGUMENT','Invalid device serial');
  if(active.has(serial)) throw new HarmonyError('DEVICE_BUSY',`当前服务已有投屏连接（本机进程 ${process.pid}）。请关闭其他设备投屏标签后重试。`,{details:{ownerPid:process.pid}});
  active.add(serial);
@@ -46,7 +47,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
  let controller:ReadableStreamDefaultController<Uint8Array>|undefined;
  let firstTimer:ReturnType<typeof setTimeout>|undefined,watchdog:ReturnType<typeof setTimeout>|undefined,wakeupTimer:ReturnType<typeof setTimeout>|undefined,initialFrameTimer:ReturnType<typeof setTimeout>|undefined;
  let statsTimer:ReturnType<typeof setInterval>|undefined;
- const stats:{[key:string]:unknown}={hostPid:process.pid,startedAt:new Date().toISOString(),encodedPictures:0,videoBytes:0,state:'starting'};
+ const stats:{[key:string]:unknown}={hostPid:process.pid,startedAt:new Date().toISOString(),encodedPictures:0,videoBytes:0,state:'starting',phases:{}};
  const statsPath=join(options.cacheDirectory,'native-video-status.json');
  let statsWrites=Promise.resolve();
  const saveStats=()=>{const body=JSON.stringify(stats,null,2);return statsWrites=statsWrites.then(()=>writeFile(statsPath,body)).catch(()=>{});};
@@ -60,6 +61,7 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
  const saveOwner=async()=>{if(ownerLock){const temp=`${ownerPath}.${ownerLock.owner.nonce}.tmp`;try{await writeFile(temp,JSON.stringify({hostPid:process.pid,nonce:ownerLock.owner.nonce,extension,localPort,sessionId:id,startedAt:stats.startedAt}),{mode:0o600});await rename(temp,ownerPath);wroteOwner=true;}finally{await rm(temp,{force:true}).catch(()=>{});}}};
  let rejectStart:((e:Error)=>void)|undefined;
  const cleanup=()=>closing??=(async()=>{
+  stats.endStage??=stats.stage;stats.endReason=stats.error??(signal?.aborted?'subscriber-cancelled':'explicit-close');stats.totalLifetimeMs=Date.now()-sourceStarted;
   closed=true;clearTimeout(firstTimer);clearTimeout(watchdog);clearTimeout(wakeupTimer);clearTimeout(initialFrameTimer);clearInterval(statsTimer);signal?.removeEventListener('abort',abort);
   if(started&&stats.error){try{stats.daemonLogTail=(await command(['shell',`tail -c 4000 ${log}`],'native_video_failure_log')).slice(-4000);}catch{}}
   // Let the extension destroy its encoder and virtual screen before killing
@@ -97,11 +99,15 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
  try {
   if(signal?.aborted) throw new HarmonyError('COMMAND_ABORTED','Video start cancelled');
   const profile=nativeVideoProfile(options.quality);
+  let phaseStarted=Date.now();stats.stage='resource';
   const resource=await embeddedNativeVideoResource(options.resourceDirectory);
+  (stats.phases as Record<string,number>).resource=Date.now()-phaseStarted;
   await mkdir(options.cacheDirectory,{recursive:true});
   stats.quality=options.quality||'balanced';stats.encoderProfile=profile;
+  phaseStarted=Date.now();stats.stage='locks';
   ownerLock=acquireDeviceLock(serial,ownershipDirectory);
   runtimeLock=acquireDeviceLock(serial,nativeRuntimeLockDirectory());
+  (stats.phases as Record<string,number>).locks=Date.now()-phaseStarted;
   const oldText=await readFile(ownerPath,'utf8').catch(e=>{if(e.code==='ENOENT')return undefined;throw e;});
   let old:any;
   try{old=oldText===undefined?undefined:JSON.parse(oldText);}catch{throw new HarmonyError('DEVICE_BUSY','Invalid native-video ownership record; explicit recovery is required');}
@@ -127,11 +133,15 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   }
   // Establish the reusable UI agent before the encoder; never initialize it
   // over an active stream, because UiDriver.connect may restart uitest.
-  const automationReady=await options.prepareAutomation?.(signal);if(automationReady!==undefined)stats.automationReady=automationReady;
-  localPort=await loopbackPort();
-  await saveOwner();
-  filesTouched=true;
-  await command(['file','send',resource.file,remote],'native_video_send',signal);
+  stats.stage='prepare';
+  // Transfer does not depend on UiDriver. Join both branches before starting
+  // the daemon, including on failure, so cleanup cannot race a late transfer.
+  const preparation=await Promise.allSettled([
+   (async()=>{const automationStart=Date.now();try{const ready=await options.prepareAutomation?.(signal);if(ready!==undefined)stats.automationReady=ready;}finally{(stats.phases as Record<string,number>).prepareAutomation=Date.now()-automationStart;}})(),
+   (async()=>{localPort=await loopbackPort();await saveOwner();filesTouched=true;await command(['file','send',resource.file,remote],'native_video_send',signal);})(),
+  ]);
+  for(const result of preparation)if(result.status==='rejected')throw result.reason;
+  stats.stage='daemon';
   started=true;
   // The extension parses exact flag tokens; joined forms such as -scale2 are
   // silently ignored and leave full-resolution/high-rate defaults active.
@@ -164,7 +174,9 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
   try{await command(['shell','power-shell wakeup'],'native_video_display_prepare',signal);}catch(error){if(signal?.aborted)throw error;}
   // Capture a JPEG only if the encoder has not supplied a picture. Eager PNG
   // capture/pull/re-encode on every video start wastes work on changing screens.
-  try{await new Promise<void>((accept,reject)=>client.waitForReady(Date.now()+12000,(e:Error)=>e?reject(e):accept()));}catch(error){throw new HarmonyError('CAPABILITY_UNAVAILABLE','投屏进程已启动，但视频通道未能连接。插件已回收本次连接，可重新接入。',{cause:error,retryable:true,details:{stage:'video_channel',localPort}});}
+  phaseStarted=Date.now();stats.stage='rpcReady';
+  try{await new Promise<void>((accept,reject)=>client.waitForReady(Date.now()+12000,(e:Error)=>e?reject(e):accept()));}catch(error){throw new HarmonyError('CAPABILITY_UNAVAILABLE','投屏进程已启动，但视频通道未能连接。插件已回收本次连接，可重新接入。',{cause:error,retryable:true,details:{stage:'video_channel',localPort}});}finally{(stats.phases as Record<string,number>).rpcReady=Date.now()-phaseStarted;}
+  stats.stage='firstPicture';
   if(closed||signal?.aborted) throw new HarmonyError('COMMAND_ABORTED','Video start cancelled');
   const packetizer=new HosVideoPacketizer(profile.fps,true);
   const videoStarted=Date.now();
@@ -202,11 +214,11 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
      if(type===2){encodedConfig=packet;if(encodedReady)controller!.enqueue(packet);continue;}
      if(type===3&&!encodedReady&&packet[8]!==1) continue;
      if(type===3){
-      if(!encodedReady){if(!encodedConfig)continue;controller!.enqueue(encodedConfig);encodedReady=true;clearTimeout(initialFrameTimer);clearTimeout(wakeupTimer);stats.state='streaming';stats.firstEncodedPictureMs=Date.now()-videoStarted;}
+      if(!encodedReady){if(!encodedConfig)continue;controller!.enqueue(encodedConfig);encodedReady=true;clearTimeout(initialFrameTimer);clearTimeout(wakeupTimer);stats.stage='streaming';stats.state='streaming';stats.firstEncodedPictureMs=Date.now()-videoStarted;stats.totalFirstEncodedPictureMs=Date.now()-sourceStarted;}
       stats.encodedPictures=Number(stats.encodedPictures)+1;
       stats.elapsedMs=Date.now()-videoStarted;
       stats.encodedPicturesPerSecond=Number(stats.encodedPictures)/(Math.max(1,Number(stats.elapsedMs))/1000);
-      if(!ready){ready=true;stats.state='streaming';stats.firstPictureMs=Date.now()-videoStarted;clearTimeout(firstTimer);clearTimeout(wakeupTimer);acceptReady();void saveStats();}
+      if(!ready){ready=true;stats.state='streaming';stats.firstPictureMs=Date.now()-videoStarted;stats.totalFirstPictureMs??=Date.now()-sourceStarted;clearTimeout(firstTimer);clearTimeout(wakeupTimer);acceptReady();void saveStats();}
      }
      controller!.enqueue(packet);
     }
@@ -231,22 +243,25 @@ export async function openNativeDevEcoVideo(options: NativeVideoOptions): Promis
    if(closed||encodedReady||!options.captureInitialFrame)return;
    try{
     if((controller!.desiredSize??0)>0){
+     const captureStarted=Date.now();
+     stats.initialPreviewStartedMs??=captureStarted-sourceStarted;
      const frame=await options.captureInitialFrame(signal);
+     (stats.phases as Record<string,number>).initialPreviewCapture=Date.now()-captureStarted;
      if(closed||encodedReady)return;
      if(!Number.isInteger(frame.width)||!Number.isInteger(frame.height)||frame.width<1||frame.height<1||frame.width>16384||frame.height>16384||!frame.data.length||frame.data.length>8*1024*1024)throw new HarmonyError('INVALID_RESPONSE','Invalid initial preview frame');
      const config=Buffer.alloc(22);config.writeUInt32BE(2,0);config.writeUInt32BE(14,4);config[8]=2;config.writeUInt32BE(frame.width,9);config.writeUInt32BE(frame.height,13);config.writeUInt32BE(1,17);config[21]=2; // explicit initial-preview flag
      const picture=Buffer.alloc(17+frame.data.length);picture.writeUInt32BE(3,0);picture.writeUInt32BE(9+frame.data.length,4);picture[8]=1;picture.writeBigUInt64BE(BigInt(Date.now())*1000n,9);Buffer.from(frame.data).copy(picture,17);
      const dimensions=`${frame.width}x${frame.height}`;if(initialDimensions!==dimensions){controller!.enqueue(config);initialDimensions=dimensions;}controller!.enqueue(picture);stats.initialPreviewPictures=Number(stats.initialPreviewPictures||0)+1;
-     if(!ready){ready=true;stats.state='waiting_for_video';stats.firstPictureMs=Date.now()-videoStarted;clearTimeout(firstTimer);acceptReady();void saveStats();}
+     if(!ready){ready=true;stats.stage='waitingForEncodedPicture';stats.state='waiting_for_video';stats.firstPictureMs=Date.now()-videoStarted;stats.totalFirstPictureMs=Date.now()-sourceStarted;clearTimeout(firstTimer);acceptReady();void saveStats();}
     }
    }catch(error){if(!closed)stats.initialPreviewError=error instanceof Error?error.message:'Initial preview failed';}
    if(!closed&&!encodedReady)initialFrameTimer=setTimeout(()=>void initialFrame(),options.initialFrameIntervalMs||2000);
   };
-  if(options.captureInitialFrame&&!encodedReady&&!closed)initialFrameTimer=setTimeout(()=>void initialFrame(),1200);
+  if(options.captureInitialFrame&&!encodedReady&&!closed){const scheduled=Date.now();initialFrameTimer=setTimeout(()=>{(stats.phases as Record<string,number>).initialPreviewWait=Date.now()-scheduled;void initialFrame();},1200);}
   await first;
   streaming.add(serial);
   armIdle();
   statsTimer=setInterval(()=>{void saveStats();},10000);statsTimer.unref?.();
   return {stream,changeDriven:true,isLive:()=>!closed,close:async()=>{try{controller?.close();}catch{}await cleanup();}};
- }catch(e){stats.error=e instanceof Error?e.message:'Native video failed';await cleanup();throw e;}
+ }catch(e){stats.endStage=stats.stage;stats.error=e instanceof Error?e.message:'Native video failed';await cleanup();throw e;}
 }

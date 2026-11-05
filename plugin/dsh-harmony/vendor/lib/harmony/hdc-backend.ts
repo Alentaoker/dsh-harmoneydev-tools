@@ -1164,8 +1164,8 @@ export class HdcBackend implements HarmonyAutomationBackend {
   }
 
   async dispose(): Promise<void> {
-    const cleanup = await Promise.allSettled([...this.videoClosers].map(close => close()));
-    await Promise.all([...this.ownedRecordings.values()].map(owned => owned.recording.discard()));
+    const cleanup = await Promise.allSettled([...this.videoClosers].map(close => Promise.resolve().then(close)));
+    cleanup.push(...await Promise.allSettled([...this.ownedRecordings.values()].map(owned => Promise.resolve().then(()=>owned.recording.discard()))));
     this.ownedRecordings.clear();
     const entries = [...this.liveScreenshotPaths.entries()];
     this.liveScreenshotPaths.clear();

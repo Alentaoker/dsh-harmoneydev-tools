@@ -1,14 +1,13 @@
 {
   "name": "dsh-harmony",
-  "version": "0.5.0-rc.10",
+  "version": "0.6.0-rc.1",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
   "license": "MIT",
-  "description": "dshHarmony — 鸿蒙设备控制、投屏、截图录像、文件、应用、日志、数据库与测试工作台",
+  "description": "鸿蒙设备投屏、手工操作、截图录屏与实时日志",
   "exports": {
     ".": "./lib/index.js",
-    "./agent": "./lib/agent.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },

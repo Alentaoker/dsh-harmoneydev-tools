@@ -65,8 +65,8 @@ test('saving live logs offers a file view that switches the workbench', () => {
 test('session logs are the real dshE2E workbench, not a second viewer', () => {
   // Reuse is the requirement: import, drag-and-drop, delete/restore, rename,
   // packages, pagination, app/TAG filters and AI drafts stay in one place.
-  assert.match(sessionPane, /import "\@dsh-e2e-workbench-css";/);
-  assert.match(sessionPane, /import \{ LogWorkbench \} from "\@dsh-e2e-workbench";/);
+  assert.match(sessionPane, /import "\@dsh-log-workbench-css";/);
+  assert.match(sessionPane, /import \{ LogWorkbench \} from "\@dsh-log-workbench";/);
   assert.match(sessionPane, /<LogWorkbench visible=\{active\} sessionId=\{sessionId\} openFileId=\{focusFileId\} onOpenFileConsumed=\{onFocusConsumed\} onDraft=\{onDraft\} \/>/);
   assert.match(sessionPane, /className="[^"]*\bde2e\b[^"]*"/, 'dshE2E scopes its styles under .de2e');
   // A requested file is honoured once; the caller clears it so a later tab switch
@@ -96,7 +96,7 @@ test('the search-history rules have exactly one implementation', async () => {
 
 test('the paired workbench is resolved at build time with an explicit fallback', () => {
   assert.match(build, /const usePairedWorkbench = fs\.existsSync\(path\.join\(pairedWorkbench, 'LogWorkbench\.jsx'\)\)/);
-  assert.match(build, /'@dsh-e2e-workbench': usePairedWorkbench \? path\.join\(pairedWorkbench, 'LogWorkbench\.jsx'\) : src\('session-log-workbench-unpaired\.tsx'\)/);
+  assert.match(build, /'@dsh-log-workbench': usePairedWorkbench \? path\.join\(pairedWorkbench, 'LogWorkbench\.jsx'\) : src\('session-log-workbench-unpaired\.tsx'\)/);
   assert.match(build, /console\.warn\(/, 'a standalone build must say it cannot show the full session-log workbench');
 });
 

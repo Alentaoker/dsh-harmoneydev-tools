@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 // Exercise the actual hook's effects with deterministic browser and React seams.
 // This is lifecycle verification, not evidence of real WebCodecs performance.
 const built = await build({
-  entryPoints: ['vendor/hooks/useHarmonyLiveFrame.ts'], bundle: true, format: 'esm', platform: 'browser', write: false,
+  entryPoints: ['vendor/hooks/useHarmonyLiveFrameEngine.ts'], bundle: true, format: 'esm', platform: 'browser', write: false,
   alias: { '@/lib/harmony/request-error': path.resolve('vendor/lib/harmony/request-error.ts'), '@/lib/harmony/media/browser-video-packets': path.resolve('vendor/lib/harmony/media/browser-video-packets.ts'),
     '@/lib/harmony/observation/screen-state': path.resolve('vendor/lib/harmony/observation/screen-state.ts'),
     '@/lib/harmony/observation/live-view-phase': path.resolve('vendor/lib/harmony/observation/live-view-phase.ts'),
@@ -21,7 +21,7 @@ const built = await build({
     `, loader: 'js' }));
   } }],
 });
-const { useHarmonyLiveFrame } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].contents).toString('base64')}`);
+const { useHarmonyLiveFrameEngine: useHarmonyLiveFrame } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].contents).toString('base64')}`);
 
 function harness(hidden, fetcher) {
   const saved = Object.fromEntries(['document', 'window', 'fetch', '__harmonyHookTest', 'VideoDecoder', 'EncodedVideoChunk', 'performance', 'createImageBitmap'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -68,7 +68,7 @@ function harness(hidden, fetcher) {
     async dispose() {
       for (const hook of hooks) hook?.cleanup?.();
       await settle();
-      assert.equal(timers.size, 0);
+      assert.equal(timers.size, 0, JSON.stringify([...timers.values()].map(t=>t.delay)));
       for (const [key, descriptor] of Object.entries(saved)) {
         if (descriptor) Object.defineProperty(globalThis, key, descriptor);
         else delete globalThis[key];
@@ -84,7 +84,21 @@ function pendingFetch(requests) {
   };
 }
 
-async function settle() { for (let turn = 0; turn < 12; turn++) await Promise.resolve(); }
+async function settle() { for (let turn = 0; turn < 40; turn++) await Promise.resolve(); }
+
+test('visibility during a pending connection keeps the remaining 45 second startup budget',async()=>{
+ const h=harness(false,pendingFetch([]));h.options.keepAlive=true;h.options.renderVisibleRef={current:true};h.options.renderChangeRef={current:null};
+ try{h.flush();await settle();h.advance(5000);h.options.renderVisibleRef.current=false;h.options.renderChangeRef.current();h.options.renderVisibleRef.current=true;h.options.renderChangeRef.current();assert.ok([...h.timers.values()].some(t=>t.delay===40000));assert.ok(![...h.timers.values()].some(t=>t.delay===15000));}finally{await h.dispose();}
+});
+
+for(const serverGeneration of [0,7])test('resuming cached pixels checks lock state and preserves server generation '+serverGeneration,async()=>{
+ let locked=false,probes=0;
+ const h=harness(false,async url=>{if(url.includes('/geometry?'))return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'g'}})};if(url.includes('/screen-state?')){probes++;return {ok:true,json:async()=>({awake:!locked,locked})};}return {ok:true,headers:new Headers({'X-Harmony-Generation':String(serverGeneration)}),body:new ReadableStream({start(c){c.enqueue(packet(2,streamConfig()));c.enqueue(framePacket(true));}})};});
+ class Decoder{static async isConfigSupported(config){return {supported:true,config};}constructor(cb){this.cb=cb;this.state='unconfigured';this.decodeQueueSize=0;}configure(){this.state='configured';}decode(){this.cb.output({displayWidth:100,displayHeight:200,close(){}});}close(){this.state='closed';}}
+ Object.assign(globalThis,{VideoDecoder:Decoder,EncodedVideoChunk:class{constructor(o){Object.assign(this,o);}}});globalThis.window.VideoDecoder=Decoder;
+ h.options.keepAlive=true;h.options.renderVisibleRef={current:true};h.options.renderChangeRef={current:null};h.options.canvasRef.current={width:100,height:200,getContext:()=>({drawImage(){},clearRect(){}})};
+ try{h.flush();await settle();assert.equal(h.flush().frame.generation,serverGeneration,'frame identity comes from server');h.options.renderVisibleRef.current=false;h.options.renderChangeRef.current();locked=true;const before=probes;h.options.renderVisibleRef.current=true;h.options.renderChangeRef.current();assert.equal(h.flush().frame.geometryId,undefined);await settle();assert.ok(probes>before);assert.equal(h.flush().phase,'waiting-unlock');assert.equal(h.flush().frame?.geometryId,undefined);}finally{await h.dispose();}
+});
 
 test('a hidden initial page opens no preview; visibility resumes only the preview endpoint', async () => {
   const requests = [];
@@ -334,4 +348,44 @@ test('an unlock ends a compatible-preview window instead of waiting out its full
     assert.equal(videoRequests, 4, 'a confirmed unlock retries the live channel inside the same window');
     assert.ok(frameRequests > framesBefore, 'the compatible preview kept the screen usable while waiting');
   } finally { await h.dispose(); }
+});
+
+
+test('shared engine buffers hidden packets without decoding and resumes cached GOP on the same HTTP stream', async()=>{
+ let requests=0,created=0,closed=0,draws=0;
+ const h=harness(false,async url=>{if(url.startsWith('/api/harmony/geometry?'))return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'g'}})};if(url.startsWith('/api/harmony/screen-state?'))return {ok:true,json:async()=>({awake:true,locked:false})};requests++;return {ok:true,body:new ReadableStream({start(c){c.enqueue(packet(2,streamConfig()));c.enqueue(framePacket(true));c.enqueue(framePacket(false));}})};});
+ class Decoder {static async isConfigSupported(config){return {supported:true,config};}constructor(cb){created++;this.cb=cb;this.state='unconfigured';this.decodeQueueSize=0;}configure(){this.state='configured';}decode(){this.cb.output({displayWidth:100,displayHeight:200,close(){}});}close(){closed++;this.state='closed';}}
+ Object.assign(globalThis,{VideoDecoder:Decoder,EncodedVideoChunk:class{constructor(value){Object.assign(this,value);}}});globalThis.window.VideoDecoder=Decoder;
+ h.options.keepAlive=true;h.options.renderVisibleRef={current:false};h.options.renderChangeRef={current:null};h.options.onFrame=()=>draws++;h.options.canvasRef.current={width:100,height:200,getContext:()=>({drawImage(){},clearRect(){}})};
+ try{h.flush();await settle();assert.equal(created,0);assert.equal(requests,1);h.options.renderVisibleRef.current=true;h.options.renderChangeRef.current();await settle();h.flush();assert.equal(requests,1);assert.equal(created,1);assert.ok(draws>=1);h.options.renderVisibleRef.current=false;h.options.renderChangeRef.current();assert.equal(closed,1);h.options.renderVisibleRef.current=true;h.options.renderChangeRef.current();await settle();h.flush();assert.equal(requests,1);assert.equal(created,2);}catch(error){console.error(error);throw error;}finally{await h.dispose();}
+});
+
+
+
+test('locked-screen compatible frames notify Hub with valid frame metadata', async () => {
+  const published=[];
+  const h=harness(false,async url=>{
+    if(url.startsWith('/api/harmony/video?'))return {ok:false,status:409,json:async()=>({error:{code:'SCREEN_LOCKED',message:'locked'}})};
+    if(url.startsWith('/api/harmony/screen-state?'))return {ok:true,json:async()=>({awake:false,locked:true})};
+    if(url.startsWith('/api/harmony/geometry?'))return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'locked-g'}})};
+    return {ok:true,headers:new Headers({'X-Harmony-Generation':'1','X-Harmony-Revision':'2'}),blob:async()=>new Blob()};
+  });
+  h.options.onFrame=frame=>published.push(frame);
+  h.options.canvasRef.current={width:0,height:0,getContext:()=>({drawImage(){},clearRect(){}})};
+  globalThis.createImageBitmap=async()=>({width:100,height:200,close(){}});
+  try {h.flush();await settle();const state=h.flush();assert.ok(published.length>=1);assert.equal(published.at(-1).width,100);assert.equal(published.at(-1).revision,2);assert.equal(state.error,null);assert.equal(state.status,'live');} finally{await h.dispose();}
+});
+
+test('an overflowing hidden GOP retires the idle source and reconnects even when the screen becomes static',async()=>{
+ let requests=0,retirements=0,source;
+ const h=harness(false,async(url,options={})=>{
+  if(url==='/api/harmony/video'&&options.method==='POST'){retirements++;assert.equal(JSON.parse(options.body).action,'retire');return {ok:true};}
+  if(url.startsWith('/api/harmony/geometry?'))return {ok:true,json:async()=>({geometry:{frameWidth:100,frameHeight:200,geometryId:'g'}})};
+  if(url.startsWith('/api/harmony/screen-state?'))return {ok:true,json:async()=>({awake:true,locked:false})};
+  requests++;return {ok:true,body:new ReadableStream({start(c){source=c;c.enqueue(packet(2,streamConfig()));c.enqueue(framePacket(true));}})};
+ });
+ class Decoder{static async isConfigSupported(config){return {supported:true,config};}constructor(cb){this.cb=cb;this.state='unconfigured';this.decodeQueueSize=0;}configure(){this.state='configured';}decode(){this.cb.output({displayWidth:100,displayHeight:200,close(){}});}close(){this.state='closed';}}
+ Object.assign(globalThis,{VideoDecoder:Decoder,EncodedVideoChunk:class{constructor(o){Object.assign(this,o);}}});globalThis.window.VideoDecoder=Decoder;
+ h.options.keepAlive=true;h.options.renderVisibleRef={current:true};h.options.renderChangeRef={current:null};h.options.canvasRef.current={width:100,height:200,getContext:()=>({drawImage(){},clearRect(){}})};
+ try{h.flush();await settle();assert.equal(h.flush().status,'live');h.options.renderVisibleRef.current=false;h.options.renderChangeRef.current();source.enqueue(framePacket(false,5*1024*1024));source.enqueue(framePacket(false,4*1024*1024));await settle();h.options.renderVisibleRef.current=true;h.options.renderChangeRef.current();await settle();for(let round=0;round<4&&requests<2;round++){for(const[id,timer]of [...h.timers])if(timer.delay<=1200){h.timers.delete(id);timer.fn();}await settle();h.flush();}assert.equal(retirements,1);assert.equal(requests,2);assert.ok(h.flush().metrics.resyncs>=1);}finally{await h.dispose();}
 });

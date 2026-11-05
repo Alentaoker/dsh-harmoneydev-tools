@@ -1,54 +1,7 @@
-# 维护升级
+# 安装与AI升级指南
 
-以 [AI 安装指南](AI_INSTALLATION.md) 为完整操作顺序。这里补充本次数据格式与版本边界。
+当前RC版本：dshHarmony / dsh-log-analysis **0.6.0-rc.1**。
 
-本次配套 Harmony **0.5.0-rc.10** / dshVerify **0.5.0-rc.3**，上一版为 rc.9 / Verify rc.2。默认日志、加入对话、直接永久删除插件副本、1/2/8GiB容量与Notepad++式跨文件查找；安装标识、storage、日志协议 2 不变，无需迁移用户数据。见 [本次交付](LOG_FIRST_ACCEPTANCE_20261028.md)、[AI 升级指南](AI_UPGRADE.md)。旧回收记录升级保留，新删除没有回收与撤销。以下旧版本小节仅作历史记录，旧 run/replay/retry 执行契约已经退役，不用于当前升级验收。
+[固定版本下载](https://github.com/Alentaoker/dsh-harmoneydev-tools/releases/tag/v0.6.0-rc.1) · [完整安装与AI升级步骤](LOG_ANALYSIS_UPGRADE.md) · [自审验收与未验范围](LOG_ANALYSIS_SELF_REVIEW_20261105.md)
 
-## 0.1.2 → 0.2.0
-
-- 不删除或重写旧运行器报告和日志。历史读取改为只读适配，不再建立或改写 `record.json`；旧文件内容与 mtime 保持不变。
-- 无归属旧记录只出现在主动选择的全部历史中；不自动认领或给 ID 加前缀。
-- 第三方执行器、动作缓存与内层验证模型已移除；新记录为 `validation-v1`，旧记录以 `legacy-e2e-v1` 只读展示。
-- 验证轮次独立保存检查点、事件、证据与采集；`finish/cancel` 幂等，结束后拒绝新增事实。
-- `list_runs/get_report/get_logs/read_validation/cancel_validation` 从工具调用者的实际会话取范围；旧脚本直接访问 HTTP 报告接口时必须补充 `sessionId`，全部历史读取需显式 `scope=all`，写入仍只允许当前会话。
-- 磁盘中遗留的新版 active 轮次在冷启动显示“已中断”，控制清理状态按实际结果记录，不凭空确认。
-
-## 宿主升级
-
-本次没有升级 DSH 宿主。当前兼容补丁基于 0.2.0-rc.2；新的宿主版本需要重新核对工具协议、客户端 slot、composition、依赖和关闭机制。插件版本、宿主版本、源码提交、安装来源分别记录。
-
-使用 `dsh-plugin-upgrade-skill` 时，读取其完整 `SKILL.md` 和匹配的版本迁移参考，先确认目标版本和失败现象。不要直接将当前宿主的预设替换成旧版补丁，也不要用 README 的安装成功代替冷启动与实机证据。
-
-## Harmony 0.3.0 → 0.4.0
-
-- 只升级 Harmony 插件，E2E 仍为 0.2.0；宿主仍为 0.2.0-rc.2。保留 DSH_HOME、profile 及其他插件。
-- 升级前结束旧投屏／录像，正常退出所有使用旧 Harmony 的目标宿主；备份目标插件及安装登记，再按 AI_INSTALLATION.md 安装并冷启动。
-- 同 Windows 用户的视频共享登记位于用户目录 `.piora-device-control/video-broker`，与 profile 无关；其中包含本机订阅令牌，不上传、不展示、不手动覆盖活动记录。输入控制锁仍独立。
-- 未升级的旧服务没有共享协议，不能靠刷新页面加入新共享源；不要为了升级强杀未知手机进程或清空所有设备控制锁。
-- 验收至少两个观看者收到真实 H.264、关闭一个后另一个存活、最后退出后归属清理完成。仅显示启动 JPEG 不算视频通过。承载源的宿主退出仍需其他观看者重连。
-
-## 跨电脑安装与发行
-
-- 安装脚本支持 PowerShell 5.1/7、空格路径和任意盘符；桌面 EXE 可用于推导 CLI/Node，CLI、Node、npm、数据目录/profile 都可显式指定。
-- `PlanOnly` 实际检查 Node 24、npm、宿主 0.2.0-rc.2、锁文件、profile 与资源；与旧脚本不同，预览也拒绝不兼容运行时。
-- 公开 Release 提供独立源码 ZIP 与 SHA256，不带 node_modules、用户配置/日志；仍需联网下载依赖，不属于离线安装包。
-- 两个插件先全部构建成功，再通过正式 `plugin --profile ... add` 登记并检查实际包、客户端和 worker。desktop/web 各自登记，不合并其它供应商。
-- 原生组件、许可证与来源信息保留；原生资源缺失时提示截图能力，哈希错误时预检停止。新电脑仍需 HDC/驱动，无需运行 DevEco Testing/Java。
-- 登记新目录前保留旧来源/profile 备份；失败用正式 plugin add 恢复旧包登记，仅合并本次字段，不覆盖整个数据目录。
-- 维护者运行 `scripts/package-release.ps1 -NodeExe <Node24> -OutputDirectory <新的外部目录>` 制作包；先在解压的干净目录构建/安装验证，再发布。该脚本不修改用户 profile，不创建 GitHub Release。
-
-宿主仍为 0.2.0-rc.2。版本 Skill 的较早迁移卡不能用于宣称支持新宿主；新版本需明确迁移和冷启动行为验收。
-
-## Harmony 0.4.3 / E2E 0.3.1
-
-两个插件一起构建升级并完整冷启动。E2E会注册默认测试路由；H仅支持新版本的准确同会话agent租约交接。旧H不提供路由桥接，组合升级不可只换E2E。保留原日志数据和工作台。只验当前页用runMode:verify_current，图片内容需verificationMode:visual及当前模型image能力。直控需execution:direct/directReason，未知参数执行前失败。旧报告保留，不补造历史动作；默认预算仍为300秒及每步骤30动作20次模型调用。
-
-## Harmony 0.5.0-rc.1 / E2E 0.4.0-rc.1 候选版
-
-后续 Harmony 0.5.0-rc.2 仍配 E2E 0.4.0-rc.1，增加视频占用来源/PID、低频等待恢复与共享订阅竞态修复；日志协议和原数据保留。新版完整冷启动后才能显示新提示。DevEco 独立投屏需释放后再验 DSH，不能用删除所有归属记录或批量杀 uitest 处理冲突。
-
-两插件成对构建和登记，保持 DSH 0.2.0-rc.2、原数据目录、profile、供应商和测试报告。日志库升级为协议 2，只按当前会话读取和管理；旧共享日志保留，需要在面板主动归属，不能替用户自动认领。跨 profile 使用相同会话 ID 及数据目录才会访问同一份会话日志。
-
-先备份当前插件来源及 profile 登记，按 AI_INSTALLATION.md 构建新目录再登记。普通日志保存继续可用；会话保存先验证协议，不允许新 Harmony 配旧 E2E 后写回全局库。AI 分析只生成可编辑草稿，不自动发送。
-
-候选版构建与自动回归通过，桌面/实机验收已按用户要求暂缓。发布候选包不表示本机已切换到新版；刷新界面不能替代完整冷启动。回退前保留新增 sessions/trash 日志目录；旧版面板不展示这些目录，不能将暂时看不到解释成数据删除。旧共享目录与测试报告继续保留。
+升级需要核实原DSH_HOME与profile、备份旧来源、校验ZIP与源码清单，再安装依赖、构建、迁移旧dsh-e2e登记并冷启动。源码目录和数据根仍沿用历史名称，不删除用户日志与旧验证历史。请按完整指南执行，不只覆盖lib目录。

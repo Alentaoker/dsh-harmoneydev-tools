@@ -40,30 +40,6 @@ test('every exported HTTP method is registered, including configuration PUT', as
   const saved = JSON.parse(await readFile(join(home, 'storages/dshHarmony/harmony.json'), 'utf8'));
   assert.equal(saved.storage.screenshotDirectory, join(home, 'screenshots'));
 });
-test('operation help is available without dispatching to the phone', async () => {
-  const result = await bridge.tool.execute({ operation: 'help', topic: 'run_scenario' }, { agent: { id: 'test-session' }, callId: 'test-call', signal: new AbortController().signal });
-  assert.equal(JSON.parse(result.content[0].text).operation, 'run_scenario');
-  assert(bridge.prompt.includes('harmony_control'));
-});
-test('invalid operation arguments and prior cancellation are rejected before dispatch', async () => {
-  await assert.rejects(bridge.tool.execute({ operation: 'tap', input: { x: 'invalid' } }, { agent: { id: 'test-session' }, callId: 'bad-call', signal: new AbortController().signal }), /Invalid/);
-  await assert.rejects(bridge.tool.execute({ operation: 'list_devices' }, { agent: { id: 'cancelled-session' }, callId: 'cancelled-call', signal: AbortSignal.abort() }), /abort/i);
-  await assert.rejects(bridge.tool.execute({ operation: 'help' }, { callId: 'no-session', signal: new AbortController().signal }), /active Harness session/);
-});
+test('manual host registers no AI tool or validation bridge',()=>{assert.equal(bridge,undefined);assert.equal(events.size,0);});
 
-test('unknown wait fields fail before device admission; human validation blocks control even with explicit direct execution', async () => {
-  const exec = { agent: { id: 'routing-test' }, callId: 'routing-call', signal: new AbortController().signal };
-  await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { milliseconds: 25000 } }, exec), /milliseconds.*Unexpected|Unexpected.*milliseconds/);
-  const unregister = bridge.automation.taskRouting.register({ activeAttempt: sessionId => sessionId === 'routing-test' ? { taskId: 't-human', attemptId: 'a-human', mode: 'human', serial: 'fixture-device' } : null });
-  try {
-    await assert.rejects(bridge.tool.execute({ operation: 'prepare_device', input: {} }, exec), /HUMAN_MODE_READ_ONLY/);
-    await assert.rejects(bridge.tool.execute({ operation: 'tap', input: { ref: 'old', generation: 1 } }, exec), /HUMAN_MODE_READ_ONLY/);
-    await assert.rejects(bridge.tool.execute({ operation: 'wait', input: { waitMs: 100 }, execution: 'direct', directReason: '明确选择直控' }, exec), /HUMAN_MODE_READ_ONLY/);
-  } finally { unregister(); }
-  assert.equal(JSON.parse((await bridge.tool.execute({ operation: 'help', topic: 'wait' }, exec)).content[0].text).operation, 'wait');
-  const direct = await bridge.tool.execute({ operation: 'help', topic: 'wait', execution: 'direct', directReason: '只看接口' }, exec);
-  assert.match(direct.content.at(-1).text, /未创建 dshVerify/);
-  assert.equal(direct.execution.kind, 'direct');
-  assert.equal(direct.execution.validationRecorded, false);
-});
-test.after(async () => { for (const cleanup of effects.reverse()) if (typeof cleanup === 'function') await cleanup(); await rm(home, { recursive: true, force: true }); });
+test('cleanup',async()=>{for(const cleanup of effects.reverse())if(typeof cleanup==='function')await cleanup();await rm(home,{recursive:true,force:true});});

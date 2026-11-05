@@ -137,7 +137,7 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
     if (event.key === 'Enter') { if (matches.length) { event.preventDefault(); move(event.shiftKey ? -1 : 1); } if (!findError && find.trim()) findHistory.record(find, findRegex, findCase); }
   };
   return <section className={'log-viewer' + (focusSourceLine ? ' source-jump-view' : '')} ref={root} tabIndex={0} aria-label="日志查看器，Ctrl+F 查找本页" style={{ '--log-row-height': rowHeight + 'px' }}>
-    <div className="log-primary-tools">
+    <div className="log-controls"><div className="log-primary-tools">
       <LogApplicationFilter sessionId={sessionId || new URL(url, globalThis.location?.href || 'http://localhost').searchParams.get('sessionId')} applications={page?.applications || []} value={filters.bundle || ''} onChange={value => change('bundle', value)}/>
       <div className="log-search-anchor" data-history-anchor="filter" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setQueryHistoryOpen(false); }}>
       <input aria-label="日志关键词" placeholder="过滤关键词" value={filters.query} maxLength={256}
@@ -166,7 +166,7 @@ export function LogViewer({ url, exportUrl, visible = true, live = false, initia
       <details className="offline-advanced"><summary>更多筛选{[filters.domain, filters.pid, filters.tid, filters.from, filters.until].filter(Boolean).length ? ' · 已启用' : ''}</summary><div className="offline-advanced-panel"><div className="log-filter-grid">{['domain', 'pid', 'tid'].map(key => <input key={key} aria-label={'过滤 ' + key.toUpperCase()} placeholder={key.toUpperCase()} value={filters[key]} onChange={e => change(key, e.target.value)} maxLength={256}/>)}</div><small className="muted">{timeBasis}</small><div className="log-filter-grid">{['from', 'until'].map(key => <label key={key}>{key === 'from' ? '开始' : '结束'}<input aria-label={key === 'from' ? '日志开始时间' : '日志结束时间'} type="datetime-local" value={filters[key] ? (() => { const date = new Date(filters[key]); return Number.isFinite(+date) ? new Date(+date - date.getTimezoneOffset() * 60000).toISOString().slice(0, 19) : ''; })() : ''} onChange={e => change(key, e.target.value ? new Date(e.target.value).toISOString() : '')}/></label>)}</div><p className="muted">包名取自日志的明确归属；只有 PID 的历史日志归属未知。{regexHelp}</p></div></details>
       <button aria-label="清除过滤" title="清除全部过滤条件" onClick={() => setFilters({ bundle: '', query: '', tag: '', domain: '', pid: '', tid: '', level: '', regex: false, caseSensitive: false, from: '', until: '' })}>重置</button>
     </div>
-    {exportError && <p role="alert" className="notice error">{exportError}</p>}
+    </div>{exportError && <p role="alert" className="notice error">{exportError}</p>}
     {findOpen && <div className="log-find" role="search"><div className="row"><div className="log-search-anchor" data-history-anchor="find" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFindHistoryOpen(false); }}><input ref={findInput} aria-label="查找本页日志" placeholder="本页查找，不改变过滤结果" value={find} maxLength={256}
       onChange={e => { setFindSelected(false); setFind(e.target.value); }}
       onFocus={() => openFindHistory()}

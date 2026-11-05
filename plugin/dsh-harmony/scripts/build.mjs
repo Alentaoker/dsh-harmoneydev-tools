@@ -6,17 +6,10 @@ import { verifyNativeVideoResource } from './verify-native-video-resource.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const vendor = path.join(root, 'vendor');
 const src = name => path.join(root, 'src', name);
-// rc.2 replaces preset configs as a whole; reproduce the installed preset declarations.
-let patch = '- insert:\n    - id: dshHarmony-host\n      name: dsh-harmony\n\n';
-for (const preset of ['standard', 'ptc', 'minimal', 'cordis']) {
-  const original = fs.readFileSync(path.join(root, 'compat', `${preset}.patch.yml`), 'utf8');
-  const lines = original.split(/\r?\n/);
-  const first = lines.findIndex(line => line.startsWith('    - id:'));
-  if (first < 0) throw new Error(`Invalid compatibility preset: ${preset}`);
-  patch += lines.slice(first).map(line => line.startsWith('    ') ? line.slice(4) : line).join('\n').trimEnd();
-  patch += '\n      - id: dshHarmony\n        name: dsh-harmony/agent\n\n';
-}
-fs.writeFileSync(path.join(root, 'cordis.patch.yml'), patch);
+fs.writeFileSync(path.join(root,'cordis.patch.yml'),'- insert:\n    - id: dshHarmony-host\n      name: dsh-harmony\n');
+// Remove retired entry points from previous builds.
+fs.mkdirSync(path.join(root,'lib'),{recursive:true});
+for(const name of fs.readdirSync(path.join(root,'lib')))if(name==='agent.js'||/^chunk-.*\.js$/.test(name))fs.rmSync(path.join(root,'lib',name));
 // Builds always use the checked-in vendor tree. Refreshing upstream is a
 // separate explicit maintenance operation; nearby checkouts cannot alter builds.
 const shared = path.join(vendor, 'app/api/harmony/_shared.ts');
@@ -39,6 +32,8 @@ fs.writeFileSync(src('routes.ts'), generated);
 // The two plugins ship as a pair; a standalone build of this repository still
 // has the sibling source. Without it the pane degrades to an explicit notice
 // instead of silently reimplementing import/delete/rename/analysis.
+const pairedManifest=path.join(root,'..','dsh-e2e','package.json');
+if(fs.existsSync(pairedManifest)&&JSON.parse(fs.readFileSync(pairedManifest,'utf8')).name!=='dsh-log-analysis')throw Error('Pair this build with dsh-log-analysis sources');
 const pairedWorkbench = path.join(root, '..', 'dsh-e2e', 'src');
 const usePairedWorkbench = fs.existsSync(path.join(pairedWorkbench, 'LogWorkbench.jsx'))
   && fs.existsSync(path.join(pairedWorkbench, 'client.css'));
@@ -49,8 +44,8 @@ const usePairedSearchMenu = fs.existsSync(pairedSearchMenu);
 const aliases = {
   '@earendil-works/pi-ai': src('pi-ai.ts'), '@earendil-works/pi-coding-agent': src('pi-sdk.ts'),
   'next/server': src('next-server.ts'),
-  '@dsh-e2e-workbench': usePairedWorkbench ? path.join(pairedWorkbench, 'LogWorkbench.jsx') : src('session-log-workbench-unpaired.tsx'),
-  '@dsh-e2e-workbench-css': usePairedWorkbench ? path.join(pairedWorkbench, 'client.css') : src('session-log-workbench-unpaired.css'),
+  '@dsh-log-workbench': usePairedWorkbench ? path.join(pairedWorkbench, 'LogWorkbench.jsx') : src('session-log-workbench-unpaired.tsx'),
+  '@dsh-log-workbench-css': usePairedWorkbench ? path.join(pairedWorkbench, 'client.css') : src('session-log-workbench-unpaired.css'),
   '@dsh-log-search-menu': usePairedSearchMenu ? pairedSearchMenu : src('log-search-menu-unpaired.ts'),
 };
 if (!usePairedWorkbench) console.warn('dshE2E source not found next to this plugin: the session-log pane will show a pairing notice.');
@@ -75,7 +70,7 @@ const adapter = (browser = false) => ({ name: 'piora-platform-adapters', setup(b
   });
 }});
 const common = { bundle: true, target: 'node24', logLevel: 'info', alias: aliases, packages: 'external', plugins: [adapter()], sourcemap: false, metafile: true };
-const native = await build({ ...common, entryPoints: [src('index.ts'), src('agent.ts')], outdir: path.join(root, 'lib'), format: 'esm', platform: 'node', splitting: true });
+const native = await build({ ...common, entryPoints: [src('index.ts')], outdir: path.join(root, 'lib'), format: 'esm', platform: 'node', splitting: true });
 fs.writeFileSync(path.join(root, 'native-inputs.json'), JSON.stringify(Object.keys(native.metafile.inputs), null, 2));
 await build({ ...common, entryPoints: [path.join(vendor, 'lib/harmony/runtime/worker-entry.ts')], outfile: path.join(root, '.harmony-worker/harmony/runtime/worker-entry.js'), format: 'esm', platform: 'node' });
 const client = await build({ entryPoints: [src('client.tsx')], outfile: path.join(root, 'lib/client.js'), bundle: true, format: 'cjs', platform: 'browser', target: 'chrome130', alias: aliases, external: ['react', 'react-dom', 'react/jsx-runtime'], plugins: [adapter(true)], jsx: 'automatic', loader: { '.module.css': 'local-css', '.css': 'css' }, logLevel: 'info', write: false, metafile: true });

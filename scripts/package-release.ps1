@@ -8,7 +8,7 @@ New-Item -ItemType Directory -Path $releaseOutput -Force | Out-Null
 $releaseRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $releaseHarmony=Get-Content -LiteralPath (Join-Path $releaseRoot 'plugin\dsh-harmony\package.json') -Raw | ConvertFrom-Json
 $releaseE2E=Get-Content -LiteralPath (Join-Path $releaseRoot 'plugin\dsh-e2e\package.json') -Raw | ConvertFrom-Json
-$releaseName='dsh-harmony-'+$releaseHarmony.version+'-e2e-'+$releaseE2E.version+'-windows-source'
+$releaseName='dsh-harmony-'+$releaseHarmony.version+'-log-analysis-'+$releaseE2E.version+'-windows-source'
 $releaseStage=Join-Path $releaseOutput $releaseName
 $releaseZip=Join-Path $releaseOutput ($releaseName+'.zip')
 if (Test-Path -LiteralPath $releaseZip) { throw 'Release ZIP already exists. Use a new output directory; no overwrite is performed.' }

@@ -10,7 +10,7 @@ import { createConnection, createServer } from 'node:net';
 
 const modulePath = resolve('tests/.shared-video-test.mjs');
 await build({entryPoints:['vendor/lib/harmony/shared-video.ts'], bundle:true, format:'esm', platform:'node', packages:'external', outfile:modulePath});
-const {openSharedVideo, sharedVideoStreaming} = await import('./.shared-video-test.mjs');
+const {openSharedVideo, sharedVideoStreaming, retireSharedVideo} = await import('./.shared-video-test.mjs');
 const errorBuild=await build({entryPoints:['vendor/lib/harmony/errors.ts'],bundle:true,format:'esm',platform:'node',write:false});
 const {HarmonyError}=await import('data:text/javascript;base64,'+Buffer.from(errorBuild.outputFiles[0].contents).toString('base64'));
 after(() => rm(modulePath, {force:true}));
@@ -148,4 +148,20 @@ test('a refused cross-process listener waits for normal record retirement instea
  await writeFile(path,JSON.stringify({version:1,pid:process.pid,nonce:randomUUID(),port,token:'a'.repeat(64)}));
  const opening=f.open();await pause(140);assert.equal(f.starts,0);
  await rm(path);const c=await bounded(opening);assert.equal(f.starts,1);await c.close();
+});
+
+test('HTTP cancellation detaches without stopping the encoder; reattach before linger reuses it',async t=>{
+ const f=await fixture(t,{idleMs:100}),a=await f.open(),ar=packetReader(a);await ar.next();await ar.next();await ar.reader.cancel();await pause(10);assert.equal(f.closes,0);const b=await f.open();assert.equal(f.starts,1);const br=packetReader(b);await br.next();await br.next();await b.close();assert.equal(f.closes,1);
+});
+test('an unobserved detached encoder retires exactly once after linger expires',async t=>{const f=await fixture(t,{idleMs:20}),a=await f.open(),ar=packetReader(a);await ar.next();await ar.next();await ar.reader.cancel();await pause(60);assert.equal(f.closes,1);await assert.rejects(f.record(),{code:'ENOENT'});await pause(30);assert.equal(f.closes,1);});
+
+test('retire arriving before detach waits boundedly and never stops an active second viewer',async t=>{
+ const f=await fixture(t,{idleMs:5000}),a=await f.open(),ar=packetReader(a);await ar.next();await ar.next();const retiring=retireSharedVideo(f.options.serial);await pause(50);await ar.reader.cancel();assert.equal(await bounded(retiring),true);assert.equal(f.closes,1);const b=await f.open();assert.equal(f.starts,2);await b.close();
+});
+
+
+test('source retirement refuses active viewers and retires an idle detached broker',async t=>{
+ const f=await fixture(t,{idleMs:1000}),a=await f.open(),b=await f.open();
+ const ar=packetReader(a),br=packetReader(b);await ar.next();await ar.next();await br.next();await br.next();
+ assert.equal(await retireSharedVideo(f.options.serial),false);assert.equal(f.closes,0);await ar.reader.cancel();await pause(10);assert.equal(await retireSharedVideo(f.options.serial),false);assert.equal(f.closes,0);await br.reader.cancel();await pause(10);assert.equal(await retireSharedVideo(f.options.serial),true);assert.equal(f.closes,1);
 });

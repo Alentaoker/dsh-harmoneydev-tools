@@ -1,3 +1,4 @@
+import {retireSharedVideo} from '@/lib/harmony/shared-video';
 import { getHarmonyDeviceManager } from "@/lib/harmony";
 import { HarmonyError } from "@/lib/harmony/errors";
 import { parseJsonWithinLimit } from '@/lib/bounded-json';
@@ -12,6 +13,7 @@ export async function POST(request:Request) {
   if(!hasJsonContentType(request))return noStoreJson({error:'Content-Type must be application/json'},{status:415});
   try {
     const body=await parseJsonWithinLimit(request,2048) as Record<string,unknown>;
+    if(body?.action==='retire'&&typeof body.serial==='string'){if(!/^[A-Za-z0-9._:\[\]-]{1,256}$/.test(body.serial))throw new HarmonyError('INVALID_ARGUMENT','Invalid device serial');return noStoreJson({retired:await retireSharedVideo(body.serial)});}
     if(body?.action!=='release-conflict'||typeof body.serial!=='string'||typeof body.leaseToken!=='string')throw new HarmonyError('INVALID_ARGUMENT','Invalid video recovery request');
     const result=await getHarmonyDeviceManager().releaseVideoConflict({serial:body.serial,leaseToken:body.leaseToken,
       confirmed:body.confirmed===true,expected:body.expected as NativeVideoRecovery,signal:request.signal});
@@ -25,6 +27,7 @@ export async function GET(request: Request) {
   try {
     const serial = requiredQuery(request, "serial");
     const manager = getHarmonyDeviceManager();
+    const videoStart=Date.now();
     const connection = await manager.openVideoStream({ serial, signal: request.signal });
     const device = manager.getState().devices.find((candidate) => candidate.serial === serial);
     if (!device) {
@@ -38,6 +41,7 @@ export async function GET(request: Request) {
         "X-Accel-Buffering": "no",
         "X-Content-Type-Options": "nosniff",
         "X-Harmony-Generation": String(device.generation),
+        "Server-Timing": `video-open;dur=${Date.now()-videoStart}`,
       },
     });
   } catch (error) {

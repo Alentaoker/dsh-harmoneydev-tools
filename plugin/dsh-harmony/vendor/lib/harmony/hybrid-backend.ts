@@ -115,11 +115,14 @@ export class HybridHarmonyBackend implements HarmonyAutomationBackend {
 
   async openVideoStream(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection> {
     return await this.hdc.openVideoStream(serial, signal,async(sourceSignal)=>{
-      try{if(await this.hypium.waitForIdle(serial,100,2000,sourceSignal))return true;}
-      catch(error){if(sourceSignal?.aborted)throw error;}
-      // UI automation is optional for viewing. Retire a failed worker before
-      // starting video so its late initialization cannot restart the encoder.
-      await this.hypium.reset(serial);return false;
+      if(sourceSignal?.aborted)throw new HarmonyError('COMMAND_ABORTED','Video preparation cancelled');
+      // Passive viewing never initializes the semantic automation driver.
+      // A ready driver may be reused by explicit advanced operations, while
+      // an unfinished old initialization must end before starting the encoder.
+      const existing=this.hypium.status().find(state=>state.serial===serial);
+      if(existing?.state==='ready')return true;
+      if(existing)await this.hypium.reset(serial);
+      return false;
     });
   }
 
@@ -144,7 +147,7 @@ export class HybridHarmonyBackend implements HarmonyAutomationBackend {
     try {
       const video=this.hdc.nativeVideoStreaming?.(serial) || await this.hdc.nativeVideoPresent?.(serial,signal);
       if(video&&operation!=='input_text'){await fallback();return;}
-      const result = await this.hypium.execute(serial, operation, args, signal,!video);
+      const result = await this.hypium.execute(serial, operation, args, signal,operation==='input_text'&&!video);
       if (!result.used) await fallback();
     } finally { lock.release(); }
   }

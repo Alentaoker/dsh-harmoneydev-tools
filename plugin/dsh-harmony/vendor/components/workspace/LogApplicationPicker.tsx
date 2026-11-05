@@ -9,13 +9,13 @@ export function LogApplicationPicker({ applications, processes, value, onChange,
   const [favorites, setFavorites] = useState<{bundle: string; label?: string}[]>([]), [favoriteError, setFavoriteError] = useState('');
   useEffect(() => {
     if (!sessionId) return; let alive = true;
-    const load = () => fetch('/api/dsh-e2e/log-library/preferences?' + new URLSearchParams({ sessionId })).then(r => r.json()).then(v => { if (alive && !v.error) setFavorites(v.favorites || []); }).catch(() => {});
+    const load = () => fetch('/api/dsh-log-analysis/log-library/preferences?' + new URLSearchParams({ sessionId })).then(r => r.json()).then(v => { if (alive && !v.error) setFavorites(v.favorites || []); }).catch(() => {});
     load(); window.addEventListener('dshLogs:favorites', load); return () => { alive = false; window.removeEventListener('dshLogs:favorites', load); };
   }, [sessionId]);
   const starred = new Set(favorites.map(item => item.bundle));
   async function toggleFavorite(app: App) {
     if (!sessionId) return;
-    try { const response = await fetch('/api/dsh-e2e/log-library/preferences?' + new URLSearchParams({ sessionId }), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bundle: app.bundleName, label: app.label, favorite: !starred.has(app.bundleName) }) }); const value = await response.json(); if (!response.ok || value.error) throw Error(value.error || '收藏不可用，请启用配套 dshE2E'); setFavorites(value.favorites || []); setFavoriteError(''); window.dispatchEvent(new Event('dshLogs:favorites')); }
+    try { const response = await fetch('/api/dsh-log-analysis/log-library/preferences?' + new URLSearchParams({ sessionId }), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bundle: app.bundleName, label: app.label, favorite: !starred.has(app.bundleName) }) }); const value = await response.json(); if (!response.ok || value.error) throw Error(value.error || '收藏不可用，请启用配套 dsh-log-analysis'); setFavorites(value.favorites || []); setFavoriteError(''); window.dispatchEvent(new Event('dshLogs:favorites')); }
     catch (error) { setFavoriteError(error instanceof Error ? error.message : String(error)); }
   }
   const root = useRef<HTMLDivElement>(null), input = useRef<HTMLInputElement>(null), trigger = useRef<HTMLButtonElement>(null), list = useRef<HTMLDivElement>(null), id = useId();

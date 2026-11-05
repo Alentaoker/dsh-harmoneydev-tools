@@ -33,7 +33,7 @@ export function LogSessionManager({ sessionId, visible, onClose, onChanged }) {
   const allPage = !!page?.sessions.length && page.sessions.every(row => selected.has(row.sessionId));
   return <section className="log-session-manager" aria-label="全部会话日志管理" aria-busy={busy || loading}>
     <header className="row spread"><h3>全部会话日志管理</h3><button disabled={busy} onClick={onClose}>返回当前会话</button></header>
-    <p className="muted">删除所选会话的日志副本及旧版本删除残留；保留对话、开发验证记录、截图、录屏和用户原文件。</p>
+    <p className="muted">删除所选会话的日志副本及旧版本删除残留；保留对话、截图、录屏和用户原文件。</p>
     <div className="row log-manager-tools"><input aria-label="搜索日志所属会话" placeholder="搜索会话名称或 ID" maxLength={256} disabled={busy} value={query} onChange={event => setQuery(event.target.value)}/><button disabled={busy || loading} onClick={() => setTick(value => value + 1)}>刷新会话</button><span>已选 {selected.size} 个会话{selected.size ? '（含其它分页）' : ''}</span><button disabled={busy || !selected.size} onClick={() => setSelected(new Set())}>取消选择</button></div>
     {page && <p className="muted">{page.total} 个会话 · {page.totals.files + page.totals.trashFiles} 份日志 · 估算占用 {size(page.totals.bytes + page.totals.trashBytes)}{page.totals.trashFiles ? `（含旧版本残留 ${page.totals.trashFiles} 份）` : ''}</p>}
     <div className="row log-manager-actions"><button disabled={busy || loading || !selected.size} onClick={removeSelected}>{busy ? '正在删除…' : '删除所选会话日志'}</button><span className="muted">每次最多 200 个会话、10000 份日志；导入或解析中的会话会跳过并提示。</span></div>

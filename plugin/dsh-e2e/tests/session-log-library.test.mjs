@@ -71,8 +71,8 @@ test('HTTP日志接口和AI读取同样强制会话，scope=all无法放宽文�
   const routes = new Map(); registerRoutes({ effect(fn) { fn(); }, connection: { fetch: { register(route) { routes.set(route.path, route); } } } }, { logLibrary: library });
   const file = await upload(library, A);
   for (const endpoint of ['list', 'info', 'logs', 'source', 'export', 'usage', 'trash', 'unassigned']) {
-    const route = routes.get('/api/dsh-e2e/log-library/' + endpoint), missing = await route.fetch(new Request('http://localhost/api/dsh-e2e/log-library/' + endpoint + '?id=' + file.id)); assert.ok(missing.status >= 400, endpoint);
-    if (['info', 'logs', 'source', 'export'].includes(endpoint)) { const foreign = await route.fetch(new Request('http://localhost/api/dsh-e2e/log-library/' + endpoint + '?sessionId=session-B&scope=all&id=' + file.id)); assert.ok(foreign.status >= 400, endpoint); }
+    const route = routes.get('/api/dsh-log-analysis/log-library/' + endpoint), missing = await route.fetch(new Request('http://localhost/api/dsh-log-analysis/log-library/' + endpoint + '?id=' + file.id)); assert.ok(missing.status >= 400, endpoint);
+    if (['info', 'logs', 'source', 'export'].includes(endpoint)) { const foreign = await route.fetch(new Request('http://localhost/api/dsh-log-analysis/log-library/' + endpoint + '?sessionId=session-B&scope=all&id=' + file.id)); assert.ok(foreign.status >= 400, endpoint); }
   }
 }));
 test('分析草稿保留已有文字，拒绝覆盖引用或正在提交的内容，不自动发送', () => {

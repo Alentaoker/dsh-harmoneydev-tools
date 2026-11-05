@@ -6,6 +6,7 @@ import type { HarmonyMediaArtifact } from '@/lib/harmony/types';
 import styles from '../HarmonyPanel.module.css';
 import { editTextMark, textFontSize, textMarkAt, type AnnotationMark as Mark, type AnnotationTool as Tool } from './media-annotations';
 import { isComposingKey } from '@dsh-log-search-menu';
+import { prepareRecordingPreview } from '@/lib/harmony/media/recording-preview';
 
 export const mediaUrl = (item: HarmonyMediaArtifact) => `/api/harmony/media/${item.kind === 'recording' ? 'content' : 'preview'}?${new URLSearchParams({serial:item.serial,filename:item.filename})}`;
 export function paintAnnotations(canvas: HTMLCanvasElement, image: CanvasImageSource, marks: Mark[]) {
@@ -40,6 +41,15 @@ export function MediaPreview({ item, onClose, onAdded }: { item: HarmonyMediaArt
   const [zoom,setZoom] = useState(1), [error,setError] = useState(''), [notice,setNotice] = useState(''), [busy,setBusy] = useState(false);
   const adding = useRef(false);
   const [videoReady,setVideoReady]=useState(false);
+  const [recordingSource,setRecordingSource]=useState<string>();
+  useEffect(()=>{
+    if(item.kind!=='recording')return;
+    const controller=new AbortController();let disposed=false,release:(()=>void)|undefined;
+    void prepareRecordingPreview(mediaUrl(item),item.size,controller.signal).then(preview=>{
+      if(disposed){preview.dispose();return;}release=preview.dispose;setRecordingSource(preview.url);
+    }).catch(error=>{if(!disposed)setError(error instanceof Error?error.message:'录屏加载失败');});
+    return()=>{disposed=true;controller.abort();release?.();};
+  },[item.serial,item.filename,item.kind,item.size]);
   const fit = () => { if (image.current && stage.current) setZoom(Math.min(1,(stage.current.clientWidth-40)/image.current.naturalWidth,(stage.current.clientHeight-40)/image.current.naturalHeight)); };
   const repaint = (extra?: Mark) => { if (canvas.current && image.current) { const visible=marks.filter((_,index)=>editor?.index!==index); paintAnnotations(canvas.current,image.current,extra ? [...visible,extra] : visible); } };
   const writeMarks=(next:Mark[])=>{if(next===marksRef.current)return;past.current=[...past.current.slice(-99),marksRef.current];marksRef.current=next;setMarks(next);setFuture([]);};
@@ -117,7 +127,7 @@ export function MediaPreview({ item, onClose, onAdded }: { item: HarmonyMediaArt
       <button disabled={!ready} onClick={()=>setZoom(value=>Math.max(.05,value*.8))}>−</button><span>{Math.round(zoom*100)}%</span><button disabled={!ready} onClick={()=>setZoom(value=>Math.min(4,value*1.25))}>+</button><button disabled={!ready} onClick={fit}>适应 0</button><button disabled={!ready} onClick={()=>setZoom(1)}>原图 1</button>
     </div>
     <div className={styles.previewStage} ref={stage}>
-      {!source&&<div className={styles.videoPreview}><video ref={video} controls preload="metadata" src={mediaUrl(item)} onLoadedData={()=>setVideoReady(true)} onError={()=>setError('录屏加载失败，请关闭后重试')}/><button disabled={!videoReady} onClick={captureFrame}>{videoReady?'截取当前帧并批注':'正在加载录屏…'}</button></div>}
+      {!source&&<div className={styles.videoPreview}><video ref={video} controls preload="metadata" src={recordingSource} onLoadedData={()=>setVideoReady(true)} onError={()=>setError('录屏加载失败，请关闭后重试')}/><button disabled={!videoReady} onClick={captureFrame}>{videoReady?'截取当前帧并批注':'正在加载录屏…'}</button></div>}
       <div className={styles.annotationSurface} hidden={!source} style={{width:image.current?image.current.naturalWidth*zoom:undefined}}>
       <canvas ref={canvas} hidden={!source} style={{display:source?'block':'none',width:image.current?image.current.naturalWidth*zoom:undefined,cursor:tool==='move'?'grab':tool==='text'?'text':'crosshair'}} onPointerDown={event=>{
         if(!ready||event.button!==0||busy)return;event.preventDefault();if(commitText()===null)return;

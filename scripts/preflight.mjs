@@ -1,3 +1,4 @@
+import {plugins} from './plugins.mjs';
 import { readFile, lstat } from 'node:fs/promises';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -9,8 +10,8 @@ if(process.versions.node.split('.')[0]!=='24')throw Error('Node 24 is required.'
 if(process.platform!=='win32')throw Error('This release is validated on Windows only.');
 if(process.arch!=='x64')throw Error('This release is validated on Windows x64 only; Windows ARM64 requires separate native-dependency validation.');
 const packages=[];
-for(const name of ['dsh-harmony','dsh-e2e']){
-  const directory=join(root,'plugin',name);
+for(const {name,directory:source} of plugins){
+  const directory=join(root,source);
   const pkg=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));
   const lock=JSON.parse(await readFile(join(directory,'package-lock.json'),'utf8'));
   if(pkg.name!==name||lock.packages?.['']?.name!==name||lock.version!==pkg.version)throw Error(`${name}: manifest/lock identity mismatch.`);
@@ -19,6 +20,8 @@ for(const name of ['dsh-harmony','dsh-e2e']){
     if(sorted(pkg[key])!==sorted(lock.packages[''][key]))throw Error(`${name}: ${key} differ from the lockfile.`);
   }
   for(const file of ['cordis.patch.yml','scripts/build.mjs'])await lstat(join(directory,file));
+  if(pkg.exports?.['./agent'])throw Error(name+': retired agent export remains');
+  const patch=await readFile(join(directory,'cordis.patch.yml'),'utf8');if(/preset-|\/agent/.test(patch))throw Error(name+': retired preset/agent remains');
   // The third-party runner must be gone from both the manifest and the resolved
   // lock graph; a depth-1 string removal alone is not enough.
   for(const key of ['dependencies','devDependencies','optionalDependencies','peerDependencies']){
@@ -35,6 +38,7 @@ const pairedSourceCount = await verifyPairedSources(root);
 if(profile){
   const pkg=JSON.parse(await readFile(join(profile,'package.json'),'utf8'));
   if(!pkg.dsh?.profile||!Array.isArray(pkg.dsh.profile.bundles))throw Error('Target is not an initialized DSH profile.');
+  for(const file of ['cordis.yml','cordis.patch.yml']){const text=await readFile(join(profile,file),'utf8').catch(e=>{if(e.code==='ENOENT')return '';throw e;});if(/dsh-e2e|dsh-harmony\/agent/.test(text))throw Error(file+': contains retired custom agent references; inspect before migration');}
 }
 const manifestPath=join(root,'release-manifest.json');
 const manifestStat=await lstat(manifestPath).catch(e=>{if(e.code==='ENOENT')return null;throw e;});

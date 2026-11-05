@@ -23,11 +23,11 @@ test('the real repository satisfies the paired build contract and its import clo
 });
 
 test('a truncated package fails and names every missing file', async () => {
-  const root = await stage(contract.filter(file => file !== 'LogSearchHistory.jsx' && file !== 'validation-store.mjs'));
+  const root = await stage(contract.filter(file => file !== 'LogSearchHistory.jsx' && file !== 'log-storage.mjs'));
   try {
     await assert.rejects(verifyPairedSources(root), error => {
       assert.match(error.message, /plugin\/dsh-e2e\/src\/LogSearchHistory\.jsx/);
-      assert.match(error.message, /plugin\/dsh-e2e\/src\/validation-store\.mjs/);
+      assert.match(error.message, /plugin\/dsh-e2e\/src\/log-storage\.mjs/);
       assert.doesNotMatch(error.message, /LogWorkbench\.jsx/, 'present files are not reported');
       return true;
     });
